@@ -43,13 +43,6 @@
   int sensor1State = 0;
   int sensor2State = 0;
 
-//Servo motors - laser arm 
-
-  int currentX = 90; 
-  int currentY = 45; 
-  unsigned long lastMoveTime = 0;
-  const unsigned long moveInterval = 30;
-
 
 //wifiserver2
 
@@ -348,43 +341,28 @@ void loop() {
     digitalWrite(motorPinD,LOW);    
   }
 
+//move servo function 
 
+  void moveServo(){
 
- void moveServo() {
-    
-    int angleX = map(joy_one_value.xVal, 0, 4095, 45, 135);
+    int angleX = map(joy_one_value.xVal, 0, 4095, 45, 135);//0,100,0,10
     int angleY = map(joy_one_value.yVal, 0, 4095, 0, 90);
 
-    
-    if (millis() - lastMoveTime >= moveInterval) {
-        lastMoveTime = millis(); 
-
-        
-        if (angleY > 70) {
-            currentY -= 5; 
-        } 
-        else if (angleY < 20) {
-            currentY += 5; 
-        }
-        else {
-            
-            if (angleX > 130) {
-                currentX -= 5; 
-            } 
-            else if (angleX < 80) {
-                currentX += 5; 
-            }
-        }
-
-        
-        currentX = constrain(currentX, 45, 135); 
-        currentY = constrain(currentY, 0, 90);
-
-        
-        servoY.write(currentY);
-        servoX.write(currentX);
+    // servoY.write(90-angleY);
+    // servoX.write(180-angleX);
+    if(angleY>70||angleY<20){
+      servoY.write(90-angleY);
     }
-
+    else{
+      servoY.write(45);
+      if(angleX>130||angleX<80){
+        servoX.write(180-angleX);
+      }
+      else{
+        servoX.write(90);
+      }
+    }
       
+    timer2 = millis();
   
   }
