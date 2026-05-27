@@ -1,3 +1,7 @@
+// Corrected the bot working automatically.
+// Rotated the display to correct side.
+//Handled the delay when sending data to 2 devices.
+
 #include <WiFi.h>
 #include <esp_now.h>
 #include <Wire.h>
@@ -7,50 +11,36 @@
 // OLED setup
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-#define OLED_RESET    -1
+#define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// Custom I2C pins
 #define I2C_SDA 37
 #define I2C_SCL 21
 
+// Joystick and Buttons
+const int VRx1 = 17, VRy1 = 16, joySW1 = 11;
+const int VRx2 = 9, VRy2 = 8, joySW2 = 12;
+const int btn1 = 4, btn2 = 5, btn3 = 6, btn4 = 7;
+
+// --- COOLDOWN SETTINGS ---
+const unsigned long FAN_COOLDOWN = 10000;  // 10 Seconds
+const unsigned long LASER_COOLDOWN = 10000;
+
+unsigned long lastFanPress = -FAN_COOLDOWN;
+unsigned long lastLaserPress = -LASER_COOLDOWN;
 unsigned long timer = 0;
+unsigned long timer2 = 0;
 
-// Joystick 1
-const int VRx1 = 17;
-const int VRy1 = 16;
-const int joySW1 = 11;
 
-// Joystick 2 
-const int VRx2 = 9;
-const int VRy2 = 8;
-const int joySW2 = 12;
-
-// Push buttons
-const int btn1 = 4; //api wada karana button eka
-const int btn2 = 5;
-const int btn3 = 6;
-const int btn4 = 7; 
-
-// --- RATE LIMITING / DEBOUNCE VARIABLES FOR btn4 ---
-const unsigned long BUTTON_COOLDOWN = 10000;
-unsigned long lastPressTime = -BUTTON_COOLDOWN;
-static bool lastReadyState = false;
-// ----------------------------------------------------
-// Global health variable (0-100 range assumed)
-volatile int currentHealth = 100; 
-
-// Define the amount of damage taken per hit
-const int DAMAGE_PER_HIT = 10;
-const int DAMAGE_PER_HIT_IR = 2;
-
-// LED
+// Global health
+volatile int currentHealth = 100;
 const int damage = LED_BUILTIN;
 
-// Server MAC address
-uint8_t serverMac[] = {0x10, 0x20, 0xBA, 0x4C, 0xE3, 0x30};
+// MAC Addresses
+uint8_t serverMac[] = { 0x12, 0x20, 0xBA, 0x4C, 0xE3, 0x30 };
+uint8_t centralDeviceMac[] = { 0x10, 0x20, 0xBA, 0x4C, 0x50, 0x8C };
 
-// Sending Data structure
+// Data structures
 typedef struct {
   int x1, y1;
   bool sw1;
@@ -58,110 +48,57 @@ typedef struct {
   bool sw2;
   bool btn1, btn2, btn3, btn4;
 } ControllerData;
-
-//Receiving Data Structure
-
 ControllerData ctrlData;
 
-typedef struct{
+typedef struct {
+  int fan;
+  int laser;
+} PowerValues;
+PowerValues power;
+
+typedef struct {
   int d1;
   bool ir1;
   bool ir2;
 } ReceivingData;
 
+// --- SENDING FUNCTION ---
 
 
 
-// ESP-NOW callbacks
 void onDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
   Serial.print("Last Packet Send Status: ");
-    if (status == ESP_NOW_SEND_SUCCESS) {
-        Serial.println("Delivery Success");
-    } else {
-        Serial.println("Delivery Fail");
-    }
+  if (status == ESP_NOW_SEND_SUCCESS) {
+    Serial.println("Delivery Success");
+  } else {
+    Serial.println("Delivery Fail");
+  }
 }
 
 void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData, int len) {
-    // 2. Check the length to ensure a complete structure was received
-    if (len == sizeof(ReceivingData)) {
-        ReceivingData receivedData;
-        // 3. Copy the raw bytes directly into the structure variable
-        memcpy(&receivedData, incomingData, sizeof(receivedData));
-        
-        
-
-        int receivedHitSignal=receivedData.d1;
-        int irDamage=(receivedData.ir1 || receivedData.ir2);
-        //memcpy(&receivedHitSignal, incomingData, sizeof(receivedHitSignal));
-        
-        Serial.print("Received Signal: ");
-        Serial.println(receivedHitSignal);
-        
-        // --- DAMAGE LOGIC: Check for the "Hit" signal (Value of 1) ---
-        if(receivedHitSignal>400){
-          receivedHitSignal = 1;
-        }
-
-        if (receivedHitSignal == 1) { 
-          
-          // 1. Deduct health
-          currentHealth -= DAMAGE_PER_HIT;
-          
-          // 2. Ensure health does not drop below 0
-          if (currentHealth < 0) {
-            currentHealth = 0;
-          }
-          Serial.print("Health Deducted! Current Health: ");
-          Serial.println(currentHealth);
-          
-          
-          digitalWrite(damage, HIGH);
-          delay(50); // Blink ON
-          digitalWrite(damage, LOW);
-          
-        } else {
-            // Received a 0 (or other signal), keep LED off.
-            digitalWrite(damage, LOW);
-        }
-
-        if (irDamage == 1) { 
-          
-          // 1. Deduct health
-          currentHealth -= DAMAGE_PER_HIT_IR;
-          
-          // 2. Ensure health does not drop below 0
-          if (currentHealth < 0) {
-            currentHealth = 0;
-          }
-          Serial.print("Health Deducted by IR! Current Health: ");
-          Serial.println(currentHealth);
-          
-          
-          digitalWrite(damage, HIGH);
-          delay(50); // Blink ON
-          digitalWrite(damage, LOW);
-          
-        } else {
-            // Received a 0 (or other signal), keep LED off.
-            digitalWrite(damage, LOW);
-        }
-
+  if (len == sizeof(ReceivingData)) {
+    ReceivingData receivedData;
+    memcpy(&receivedData, incomingData, sizeof(receivedData));
+    int hit = (receivedData.d1 > 400 || receivedData.ir1 || receivedData.ir2) ? 1 : 0;
+    if (hit) {
+      currentHealth -= 5;
+      if (currentHealth < 0) currentHealth = 0;
+      digitalWrite(damage, HIGH);
+      delay(50);
+      digitalWrite(damage, LOW);
+    } else {
+      digitalWrite(damage, LOW);
     }
- 
-    
-        
-  else {
-        Serial.println("Received unexpected data size.");
+  } else {
+    Serial.println("Received unexpected data size.");
   }
 }
 
 void setup() {
   Serial.begin(115200);
   WiFi.mode(WIFI_STA);
-  
 
-  // Pin setup
+
   pinMode(VRx1, INPUT);
   pinMode(VRy1, INPUT);
   pinMode(joySW1, INPUT_PULLUP);
@@ -175,60 +112,65 @@ void setup() {
   pinMode(btn4, INPUT_PULLUP);
   pinMode(damage, OUTPUT);
 
-  // Initialize I2C on custom pins
   Wire.begin(I2C_SDA, I2C_SCL);
 
-  // OLED init
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println("OLED failed");
-    while (true);
+    while (true)
+      ;
   }
+
   display.setRotation(2);
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.display();
 
-  // ESP-NOW init
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("ESP-NOW init failed");
-    return;
-  }
+  if (esp_now_init() != ESP_OK) return;
   esp_now_register_send_cb(onDataSent);
   esp_now_register_recv_cb(onDataRecv);
 
-  esp_now_peer_info_t peerInfo = {};
-  memcpy(peerInfo.peer_addr, serverMac, 6);
-  //was previously as peerInfo.channel=0;
-  peerInfo.channel = 1;
-  peerInfo.encrypt = false;
+  esp_now_peer_info_t peer = {};
+  peer.channel = 1;
+  memcpy(peer.peer_addr, serverMac, 6);
+  esp_now_add_peer(&peer);
 
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Peer add failed");
-    return;
-  }
-
-  Serial.println("Setup complete");
+  memcpy(peer.peer_addr, centralDeviceMac, 6);
+  esp_now_add_peer(&peer);
 }
 
 void loop() {
-
   unsigned long currentTime = millis();
-  bool isReady = (currentTime - lastPressTime >= BUTTON_COOLDOWN);
-  bool justPressed = false;
 
-  int currentBtn4State = digitalRead(btn4);
-  if (isReady && currentBtn4State == LOW) {
-    lastPressTime = currentTime;
+  // Check Cooldown Status
+  bool fanReady = (currentTime - lastFanPress >= FAN_COOLDOWN);
+  bool laserReady = (currentTime - lastLaserPress >= LASER_COOLDOWN);
+
+  // Local variables to decide what to send to Central Device
+  int currentFanSignal = 0;
+  int currentLaserSignal = 0;
+
+  // --- FAN LOGIC (BTN4) ---
+  if (fanReady && digitalRead(btn4) == LOW) {
+    lastFanPress = currentTime;
     ctrlData.btn4 = true;
-    Serial.print("BTN4 Activated Status");
-    Serial.println(ctrlData.btn4);
-    justPressed = true;
+    currentFanSignal = 1;
   } else {
     ctrlData.btn4 = false;
+    currentFanSignal = 0;
   }
 
-  // Read joystick and button values (Remains the same)
+  // --- LASER LOGIC (BTN3) ---
+  if (laserReady && digitalRead(btn3) == LOW) {
+    lastLaserPress = currentTime;
+    ctrlData.btn3 = true;
+    currentLaserSignal = 1;
+  } else {
+    ctrlData.btn3 = false;
+    currentLaserSignal = 0;
+  }
+
+  // --- READ OTHER INPUTS ---
   ctrlData.x1 = analogRead(VRx1);
   ctrlData.y1 = analogRead(VRy1);
   ctrlData.sw1 = digitalRead(joySW1) == LOW;
@@ -242,59 +184,41 @@ void loop() {
   ctrlData.btn3 = digitalRead(btn3) == LOW;
   ctrlData.btn4 = digitalRead(btn4) == LOW;
 
-  // Send data (Remains the same)
-  esp_now_send(serverMac, (uint8_t *)&ctrlData, sizeof(ctrlData));
-  if (justPressed) {
-  ctrlData.btn4 = false;
+
+
+  // --- SEND DATA ---
+
+  power.fan = currentFanSignal;
+  power.laser = currentLaserSignal;
+
+  if ((millis() - timer) > 15) {
+  // 1. To Central Device (Battleground)
+    esp_now_send(centralDeviceMac, (uint8_t *)&power, sizeof(power));
+    timer = millis();
   }
-  // --- OLED DRAWING ---
+
+  if ((millis() - timer2) > 10) {
+    // 2. To Server (Range Bot)
+    esp_now_send(serverMac, (uint8_t *)&ctrlData, sizeof(ctrlData));
+    timer = millis();
+  }
+
+
+  // --- OLED ---
+  display.setRotation(0);
   display.clearDisplay();
-  display.setTextSize(1);
+  display.setCursor(0, 0);
   display.setTextColor(SSD1306_WHITE);
 
+  display.print("FAN: ");
+  display.println(fanReady ? "RDY" : "CD");
+  display.print("LSR: ");
+  display.println(laserReady ? "RDY" : "CD");
 
-  
-  // Joystick 1 (J1)
+  int fillWidth = map(currentHealth, 0, 100, 0, 118);
+  display.drawRect(0, 45, 118, 8, SSD1306_WHITE);
+  if (fillWidth > 0) display.fillRect(1, 46, fillWidth - 2, 6, SSD1306_WHITE);
 
-  if (isReady != lastReadyState) {
-    //Serial.print("Button Status: ");
-    //Serial.println(ctrlData.btn4);
-    Serial.println(isReady ? "READY" : "NR");
-    lastReadyState = isReady;
-  }
-  display.setCursor(0, 0); // Row 1
-
-  // ----------------------------------------------------
-  if (isReady) {
-    display.println("READY");
-  } else {
-    unsigned long timeRemaining = BUTTON_COOLDOWN - (currentTime - lastPressTime);
-    display.println("NOT READY");
-  }
-  // 2. HEALTH BAR LOGIC (Bottom Half)
-  
-  const int BAR_X = 0;
-  const int BAR_Y = 30; // Placed near the bottom, after button data
-  const int MAX_BAR_WIDTH = 118; 
-  const int BAR_HEIGHT = 8;
-  const int MAX_HEALTH_VALUE = 100;
-
-  // Calculate the filled width based on the current health (0 to 100)
-  int fillWidth = map(currentHealth, 0, MAX_HEALTH_VALUE, 0, MAX_BAR_WIDTH);
-
-  // Draw the background/border for the health bar
-  display.drawRect(BAR_X, BAR_Y, MAX_BAR_WIDTH, BAR_HEIGHT, SSD1306_WHITE);
-
-  // Draw the filled part (the actual health level)
-  if (fillWidth > 2) {
-    display.fillRect(BAR_X + 1, BAR_Y + 1, fillWidth - 2, BAR_HEIGHT - 2, SSD1306_WHITE);
-  } else if (fillWidth > 0) {
-    display.fillRect(BAR_X + 1, BAR_Y + 1, 1, BAR_HEIGHT - 2, SSD1306_WHITE);
-  }
-  
- 
-  display.setTextSize(1);
   display.display();
-
-  delay(100);
+  delay(50);
 }
