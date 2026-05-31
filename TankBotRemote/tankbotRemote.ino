@@ -54,7 +54,8 @@ const int damage = LED_BUILTIN;
 
 
 typedef struct {
-  int x1, y1;
+  int x1;
+  int y1;
   bool sw1;
   bool btn1, btn2;
 } ControllerData;
@@ -65,6 +66,7 @@ typedef struct {
   bool ir1;         // IR Damage Sensor 1
   bool ir2;         // IR Damage Sensor 2
   int hallValue;    // Hall Sensor Analog Value 
+  float m1;
 } ReceivingData;
 
 ControllerData ctrlData;
