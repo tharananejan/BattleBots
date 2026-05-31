@@ -25,6 +25,18 @@ typedef struct {
 
 RangeBotData rangeBotPowers;
 
+typedef struct {
+  int x1;
+  int y1;
+  bool sw1;
+  bool btn1, btn2;
+} TankBotRemoteData;
+
+TankBotRemoteData tankBotRemoteData;
+bool humidifierPending = false;
+bool humidifierOn = false;
+unsigned long humidifierStartTime = 0;
+
 void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData, int len) {
   if (len == sizeof(RangeBotData)) {
     memcpy(&rangeBotPowers, incomingData, sizeof(rangeBotPowers));
@@ -33,6 +45,12 @@ void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
     }
     if (rangeBotPowers.laserVal == 1) {
       Serial.println("Signal Received: Laser ON");
+    }
+  } else if (len == sizeof(TankBotRemoteData)) {
+    memcpy(&tankBotRemoteData, incomingData, sizeof(tankBotRemoteData));
+    if (tankBotRemoteData.btn2) {
+      humidifierPending = true;
+      Serial.println("Signal Received from TankBot Remote: Humidifier ON");
     }
   }
 }
@@ -85,6 +103,19 @@ void loop() {
   if(laseron&&millis()-laserStartTime>5*1000){
     laseron=false;
     digitalWrite(lasorout,LOW);
+  }
+
+  // Handle Humidifier (TankBot Remote btn2)
+  if (humidifierPending) {
+    Serial.println("Signal Received: Humidifier relay activated");
+    digitalWrite(humidifier, HIGH);
+    humidifierOn = true;
+    humidifierStartTime = millis();
+    humidifierPending = false;
+  }
+  if (humidifierOn && millis() - humidifierStartTime > 5 * 1000) {
+    humidifierOn = false;
+    digitalWrite(humidifier, LOW);
   }
 
 }
