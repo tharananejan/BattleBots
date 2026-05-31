@@ -32,6 +32,7 @@
   unsigned long timer = 0;
   unsigned long timer2 = 0;
   unsigned long timer3 = 0;
+  unsigned long telemetryTimer = 0;
 
 
 //Pin setup 2
@@ -187,7 +188,7 @@ void setup() {
 
   esp_now_peer_info_t peerInfo = {};
   memcpy(peerInfo.peer_addr, rangeRemoteMac, 6);
-  peerInfo.channel = 1;
+  peerInfo.channel = 0;
   peerInfo.encrypt = false;
 
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
@@ -273,14 +274,16 @@ void loop() {
   }
 
   //sending data through server
-
-  esp_err_t result = esp_now_send(rangeRemoteMac, (uint8_t *)&damages, sizeof(damages));
-  if (result == ESP_OK) {
-  // Serial.println("Success");
-  } else {
-  // Serial.println("Send failed");
+  if ((millis() - telemetryTimer) > 100) {
+    esp_err_t result = esp_now_send(rangeRemoteMac, (uint8_t *)&damages, sizeof(damages));
+    telemetryTimer = millis();
+    if (result == ESP_OK) {
+    // Serial.println("Success");
+    } else {
+    // Serial.println("Send failed");
+    }
   }
-  
+
 }
 //Motor Module Functions
   void moveMotor(){

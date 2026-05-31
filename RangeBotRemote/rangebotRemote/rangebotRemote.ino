@@ -139,13 +139,20 @@ void setup() {
   esp_now_register_recv_cb(onDataRecv);
 
   esp_now_peer_info_t peerInfo = {};
-  memcpy(peerInfo.peer_addr, rangeBotMac, 6);
-  //was previously as peerInfo.channel=0;
-  peerInfo.channel = 1;
-  peerInfo.encrypt = false;
 
+  memcpy(peerInfo.peer_addr, rangeBotMac, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Peer add failed");
+    Serial.println("RangeBot peer add failed");
+    return;
+  }
+
+  memcpy(peerInfo.peer_addr, centralDeviceMac, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("BattleGround peer add failed");
     return;
   }
 
@@ -205,13 +212,13 @@ void loop() {
   power.fan = currentFanSignal;
   power.laser = currentLaserSignal;
 
-  if ((millis() - timer) > 15) {
+  if ((millis() - timer) > 100) {
   // 1. To Central Device (Battleground)
     esp_now_send(centralDeviceMac, (uint8_t *)&power, sizeof(power));
     timer = millis();
   }
 
-  if ((millis() - timer2) > 10) {
+  if ((millis() - timer2) > 30) {
     // 2. To Server (Range Bot)
     esp_now_send(rangeBotMac, (uint8_t *)&ctrlData, sizeof(ctrlData));
     timer2 = millis();
