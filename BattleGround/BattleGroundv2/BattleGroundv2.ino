@@ -28,7 +28,12 @@ RangeBotData rangeBotPowers;
 void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData, int len) {
   if (len == sizeof(RangeBotData)) {
     memcpy(&rangeBotPowers, incomingData, sizeof(rangeBotPowers));
-
+    if (rangeBotPowers.fanVal == 1) {
+      Serial.println("Signal Received: Fan ON");
+    }
+    if (rangeBotPowers.laserVal == 1) {
+      Serial.println("Signal Received: Laser ON");
+    }
   }
 }
 
@@ -60,6 +65,7 @@ void loop() {
 
   // Handle Fan Timer
   if (rangeBotPowers.fanVal==1) {
+      Serial.println("Signal Received: Fan relay activated");
       digitalWrite(fanout,HIGH);
       fanon=true;
       fanStartTime = millis();  
@@ -71,6 +77,7 @@ void loop() {
 
   // Handle Laser Timer
   if (rangeBotPowers.laserVal==1) {
+      Serial.println("Signal Received: Laser relay activated");
       digitalWrite(lasorout,HIGH);
       laseron=true;
       laserStartTime = millis();  

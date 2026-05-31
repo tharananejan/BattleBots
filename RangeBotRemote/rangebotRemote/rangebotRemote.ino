@@ -43,6 +43,7 @@ unsigned long timer2 = 0;
 unsigned long oledTimer = 0;
 unsigned long damageLedOffAt = 0;
 volatile bool damageLedOn = false;
+bool forceSendBG = false;
 
 // Global health
 volatile int currentHealth = 100;
@@ -179,6 +180,8 @@ void loop() {
     lastFanPress = currentTime;
     ctrlData.btn4 = true;
     currentFanSignal = 1;
+    forceSendBG = true;
+    Serial.println("Button 4 pressed");
   } else {
     ctrlData.btn4 = false;
     currentFanSignal = 0;
@@ -189,6 +192,8 @@ void loop() {
     lastLaserPress = currentTime;
     ctrlData.btn3 = true;
     currentLaserSignal = 1;
+    forceSendBG = true;
+    Serial.println("Button 3 pressed");
   } else {
     ctrlData.btn3 = false;
     currentLaserSignal = 0;
@@ -205,16 +210,22 @@ void loop() {
 
   ctrlData.btn1 = digitalRead(btn1) == LOW;
   ctrlData.btn2 = digitalRead(btn2) == LOW;
-  ctrlData.btn3 = digitalRead(btn3) == LOW;
-  ctrlData.btn4 = digitalRead(btn4) == LOW;
 
   // Send data (Remains the same)
   power.fan = currentFanSignal;
   power.laser = currentLaserSignal;
 
-  if ((millis() - timer) > 100) {
-  // 1. To Central Device (Battleground)
+  if (forceSendBG || (millis() - timer) > 100) {
+    // 1. To Central Device (Battleground)
     esp_now_send(centralDeviceMac, (uint8_t *)&power, sizeof(power));
+    if (forceSendBG) {
+      if (currentFanSignal == 1) {
+        Serial.println("Signal sent to BattleGround");
+      } else if (currentLaserSignal == 1) {
+        Serial.println("Signal sent to BattleGround");
+      }
+      forceSendBG = false;
+    }
     timer = millis();
   }
 
