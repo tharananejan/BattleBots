@@ -19,7 +19,8 @@
 
 #define SERVO_PIN 11 // UPDATED: Servo is now on pin 11
 
-uint8_t remoteMac[] = { 0x10, 0x20, 0xBA, 0x40, 0xF6, 0x04 };
+uint8_t remoteMac[] = { 0xA0, 0xF2, 0x62, 0xE0, 0x47, 0xCC };
+// A0:F2:62:E0:47:CC
 uint8_t bridgeMac[6] = { 0 };
 bool hasBridgePeer = false;
 
