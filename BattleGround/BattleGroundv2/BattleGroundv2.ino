@@ -32,9 +32,11 @@ typedef struct {
   int y1;
   bool sw1;
   bool btn1, btn2;
+  bool isAutomatedMode;
 } TankBotRemoteData;
 
 TankBotRemoteData tankBotRemoteData;
+bool tankBotAutomatedMode = false;
 bool humidifierPending = false;
 bool humidifierOn = false;
 unsigned long humidifierStartTime = 0;
@@ -55,6 +57,7 @@ typedef struct {
   bool sw1;
   bool btn1;
   bool btn2;
+  bool isAutomatedMode;
 } RemoteCommandData;
 
 const int JOYSTICK_CENTER = 2048;
@@ -63,7 +66,7 @@ const int JOYSTICK_HIGH = 4095;
 const unsigned long COMMAND_TIMEOUT_MS = 700;
 
 RemoteCommandData autoCommand = {
-  JOYSTICK_CENTER, JOYSTICK_CENTER, false, false, false
+  JOYSTICK_CENTER, JOYSTICK_CENTER, false, false, false, false
 };
 
 bool automationActive = false;
@@ -83,6 +86,7 @@ void stopTankBotAutomation() {
   autoCommand.sw1 = false;
   autoCommand.btn1 = false;
   autoCommand.btn2 = false;
+  autoCommand.isAutomatedMode = false;
   automationActive = false;
   sendAutomationToTankBot();
 }
@@ -121,6 +125,7 @@ void applySerialCommandPair(char turnCmd, char driveCmd) {
   autoCommand.sw1 = false;
   autoCommand.btn1 = false;
   autoCommand.btn2 = false;
+  autoCommand.isAutomatedMode = true;
 
   sendAutomationToTankBot();
   automationActive = true;
@@ -157,7 +162,8 @@ void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
 
   if (isSameMac(src, tankBotRemoteMac) && len == sizeof(TankBotRemoteData)) {
     memcpy(&tankBotRemoteData, incomingData, sizeof(tankBotRemoteData));
-    if (tankBotRemoteData.btn2) {
+    tankBotAutomatedMode = tankBotRemoteData.isAutomatedMode;
+    if (!tankBotAutomatedMode && tankBotRemoteData.btn2) {
       humidifierPending = true;
       Serial.println("Signal Received from TankBot Remote: Humidifier ON");
     }
@@ -204,14 +210,23 @@ void setup() {
 }
 
 void loop() {
-  while (Serial.available() >= 2) {
-    char turnCmd = (char)Serial.read();
-    char driveCmd = (char)Serial.read();
-    applySerialCommandPair(turnCmd, driveCmd);
-  }
+  if (tankBotAutomatedMode) {
+    while (Serial.available() >= 2) {
+      char turnCmd = (char)Serial.read();
+      char driveCmd = (char)Serial.read();
+      applySerialCommandPair(turnCmd, driveCmd);
+    }
 
-  if (automationActive && (millis() - lastAutomationTime > COMMAND_TIMEOUT_MS)) {
-    stopTankBotAutomation();
+    if (automationActive && (millis() - lastAutomationTime > COMMAND_TIMEOUT_MS)) {
+      stopTankBotAutomation();
+    }
+  } else {
+    while (Serial.available() > 0) {
+      Serial.read();
+    }
+    if (automationActive) {
+      stopTankBotAutomation();
+    }
   }
 
   if (rangeBotPowers.fanVal == 1) {

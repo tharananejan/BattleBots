@@ -35,11 +35,20 @@ const int joySW1 = 11;
 const int btn1 = 4;
 const int btn2 = 5;
 
-// --- RATE LIMITING / DEBOUNCE VARIABLES FOR btn4 ---
+// --- RATE LIMITING / DEBOUNCE VARIABLES FOR btn1 ---
 const unsigned long BUTTON_COOLDOWN = 10000;
 unsigned long lastPressTime = -BUTTON_COOLDOWN;
-static bool lastReadyState = false;
-// ----------------------------------------------------
+
+// --- Manual / Automated mode (btn2 hold 5s) ---
+const unsigned long MODE_HOLD_MS = 5000;
+const unsigned long MANUAL_LABEL_MS = 500;
+const int JOYSTICK_CENTER = 2048;
+
+bool isAutomatedMode = false;
+unsigned long btn2PressStart = 0;
+bool btn2Holding = false;
+bool btn2HoldHandled = false;
+unsigned long manualDisplayUntil = 0;
 
 // Global health variable (0-100 range assumed)
 volatile int currentHealth = 100; 
@@ -59,6 +68,7 @@ typedef struct {
   int y1;
   bool sw1;
   bool btn1, btn2;
+  bool isAutomatedMode;
 } ControllerData;
 
 // Receiving Data Structure (Bot Status/Damage Data)
@@ -206,11 +216,34 @@ void setup() {
   esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
 }
  
+void handleModeHold(unsigned long currentTime, bool btn2Down) {
+  if (btn2Down) {
+    if (!btn2Holding) {
+      btn2Holding = true;
+      btn2PressStart = currentTime;
+      btn2HoldHandled = false;
+    } else if (!btn2HoldHandled && (currentTime - btn2PressStart >= MODE_HOLD_MS)) {
+      isAutomatedMode = !isAutomatedMode;
+      btn2HoldHandled = true;
+      if (!isAutomatedMode) {
+        manualDisplayUntil = currentTime + MANUAL_LABEL_MS;
+      }
+      Serial.println(isAutomatedMode ? "Button 2 held 5s: Automated mode ON"
+                                   : "Button 2 held 5s: Manual mode ON");
+    }
+  } else {
+    btn2Holding = false;
+    btn2HoldHandled = false;
+  }
+}
+
 void loop() {
   unsigned long currentTime = millis();
-  static bool lastBtn2State = true;
+  bool btn2Down = digitalRead(btn2) == LOW;
+  static bool prevBtn2Down = false;
 
-  // --- FREEZE STATE MANAGEMENT ---
+  handleModeHold(currentTime, btn2Down);
+
   if (isFrozen) {
     if (currentTime - freezeStartTime >= FREEZE_DURATION) {
       isFrozen = false;
@@ -218,103 +251,98 @@ void loop() {
     }
   }
 
-  // --- READ & SEND CONTROLLER DATA ---
-  if (!isFrozen) {
+  ctrlData.isAutomatedMode = isAutomatedMode;
+
+  if (!isFrozen && !isAutomatedMode) {
     bool isReady = (currentTime - lastPressTime >= BUTTON_COOLDOWN);
     bool justPressed = false;
-    int currentBtn4State = digitalRead(btn1);
-    
-    if (isReady && currentBtn4State == LOW) {
+
+    if (isReady && digitalRead(btn1) == LOW) {
       lastPressTime = currentTime;
-      ctrlData.btn1 = true;
       justPressed = true;
-    } else {
-      ctrlData.btn1 = (digitalRead(btn1) == LOW); 
+      Serial.println("Button 1 pressed");
     }
 
     ctrlData.x1 = analogRead(VRx1);
     ctrlData.y1 = analogRead(VRy1);
     ctrlData.sw1 = digitalRead(joySW1) == LOW;
-
-
-
     ctrlData.btn1 = digitalRead(btn1) == LOW;
-    ctrlData.btn2 = digitalRead(btn2) == LOW;
-
-    bool btn2Down = (ctrlData.btn2 == true);
-    if (btn2Down && lastBtn2State) {
-      Serial.println("Button 2 pressed. Signal sent to BattleGround.");
-      esp_now_send(battleGroundMac, (uint8_t *)&ctrlData, sizeof(ctrlData));
-    }
-    lastBtn2State = !btn2Down;
+    ctrlData.btn2 = false;
 
     esp_now_send(broadcastAddress, (uint8_t *)&ctrlData, sizeof(ctrlData));
-    
+    esp_now_send(battleGroundMac, (uint8_t *)&ctrlData, sizeof(ctrlData));
+
+    if (prevBtn2Down && !btn2Down && !btn2HoldHandled &&
+        (currentTime - btn2PressStart < MODE_HOLD_MS)) {
+      ControllerData humidifierPulse = ctrlData;
+      humidifierPulse.btn2 = true;
+      esp_now_send(battleGroundMac, (uint8_t *)&humidifierPulse, sizeof(humidifierPulse));
+      Serial.println("Button 2 pressed. Signal sent to BattleGround.");
+    }
+
     if (justPressed) {
       ctrlData.btn1 = false;
     }
+  } else if (!isFrozen && isAutomatedMode) {
+    ctrlData.x1 = JOYSTICK_CENTER;
+    ctrlData.y1 = JOYSTICK_CENTER;
+    ctrlData.sw1 = false;
+    ctrlData.btn1 = false;
+    ctrlData.btn2 = false;
 
+    esp_now_send(broadcastAddress, (uint8_t *)&ctrlData, sizeof(ctrlData));
+    esp_now_send(battleGroundMac, (uint8_t *)&ctrlData, sizeof(ctrlData));
   } else {
-    ctrlData.x1 = 0; 
+    ctrlData.x1 = 0;
     ctrlData.y1 = 0;
     ctrlData.sw1 = false;
     ctrlData.btn1 = false;
     ctrlData.btn2 = false;
 
     esp_now_send(broadcastAddress, (uint8_t *)&ctrlData, sizeof(ctrlData));
+    esp_now_send(battleGroundMac, (uint8_t *)&ctrlData, sizeof(ctrlData));
   }
 
-  // --- OLED DRAWING ---
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0); 
-  
+  display.setCursor(0, 0);
+
   if (isFrozen) {
     unsigned long timePassed = currentTime - freezeStartTime;
     unsigned long timeRemaining = (timePassed < FREEZE_DURATION) ? (FREEZE_DURATION - timePassed) : 0;
-    int secondsRemaining = timeRemaining / 1000;
-    
-    display.setTextSize(1);
     display.print("FREEZE! ");
-    display.print("Time Left: ");
-    display.print(secondsRemaining);
+    display.print(timeRemaining / 1000);
     display.println("s");
-    
-  
+  } else if (isAutomatedMode) {
+    display.println("Automated");
+  } else if (currentTime < manualDisplayUntil) {
+    display.println("Manual");
   } else {
     bool isReady = (currentTime - lastPressTime >= BUTTON_COOLDOWN);
     if (isReady) {
       display.println("READY");
     } else {
-      unsigned long timeRemaining = BUTTON_COOLDOWN - (currentTime - lastPressTime);
       display.print("NR ");
     }
+
+    const int BAR_X = 0;
+    const int BAR_Y = 20;
+    const int MAX_BAR_WIDTH = 128;
+    const int BAR_HEIGHT = 10;
+    int fillWidth = map(currentHealth, 0, 100, 0, MAX_BAR_WIDTH);
+    fillWidth = constrain(fillWidth, 0, MAX_BAR_WIDTH);
+    display.drawRect(BAR_X, BAR_Y, MAX_BAR_WIDTH, BAR_HEIGHT, SSD1306_WHITE);
+    if (fillWidth > 0) {
+      display.fillRect(BAR_X + 1, BAR_Y + 1, fillWidth - 2, BAR_HEIGHT - 2, SSD1306_WHITE);
+    }
+    display.setCursor(0, 50);
+    display.print("HP: ");
+    display.print(currentHealth);
+    display.print("/100");
   }
 
-  // 2. HEALTH BAR LOGIC 
-  const int BAR_X = 0;
-  const int BAR_Y = 20;
-  const int MAX_BAR_WIDTH = 128; 
-  const int BAR_HEIGHT = 10;
-  const int MAX_HEALTH_VALUE = 100;
-
-  int fillWidth = map(currentHealth, 0, MAX_HEALTH_VALUE, 0, MAX_BAR_WIDTH);
-  fillWidth = constrain(fillWidth, 0, MAX_BAR_WIDTH);
-
-  display.drawRect(BAR_X, BAR_Y, MAX_BAR_WIDTH, BAR_HEIGHT, SSD1306_WHITE);
-
-  if (fillWidth > 0) {
-    display.fillRect(BAR_X + 1, BAR_Y + 1, fillWidth - 2, BAR_HEIGHT - 2, SSD1306_WHITE);
-  }
-  
-  display.setTextSize(1);
-  display.setCursor(0,50);
-  display.print("HP: ");
-  display.print(currentHealth);
-  display.print("/100");
- 
   display.display();
-
+  prevBtn2Down = btn2Down;
   delay(100);
 }
