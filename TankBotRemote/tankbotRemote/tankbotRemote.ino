@@ -109,7 +109,7 @@ void showLoadingScreen() {
 }
 
 // Callback when data is sent
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
   Serial.print("\r\nLast Packet Send Status:\t");
   if (status == ESP_NOW_SEND_SUCCESS) {
     Serial.println("Data sent successfully");
@@ -119,7 +119,8 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 }
 
 // Callback when data is received
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+void OnDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData, int len) {
+  const uint8_t *mac = recv_info->src_addr;
   if (len == sizeof(GlobalStateData) && memcmp(mac, battleGroundMac, 6) == 0) {
     GlobalStateData state;
     memcpy(&state, incomingData, sizeof(state));
@@ -197,7 +198,7 @@ void setup() {
   }
 
 
-  esp_now_register_send_cb(esp_now_send_cb_t(OnDataSent));
+  esp_now_register_send_cb(OnDataSent);
   
   // Register peer
   memcpy(peerInfo.peer_addr, broadcastAddress, 6);
@@ -219,7 +220,7 @@ void setup() {
   }
 
   // Register for a callback function that will be called when data is received
-  esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
+  esp_now_register_recv_cb(OnDataRecv);
 }
  
 void handleModeHold(unsigned long currentTime, bool btn2Down) {
