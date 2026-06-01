@@ -1,0 +1,362 @@
+.arena-wrapper {
+  width: 100%;
+  height: 100%;
+  background: var(--arena-bg);
+  padding: 1.25rem;
+  border-radius: 24px;
+  box-shadow: 
+    0 15px 35px rgba(0, 0, 0, 0.25),
+    inset 0 0 20px rgba(59, 130, 246, 0.02);
+  border: 1px solid var(--arena-border);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font-family: 'Outfit', sans-serif;
+  transition: all 0.3s ease;
+}
+
+.arena-wrapper::after {
+  display: none; /* Removed completely */
+}
+
+body.dark-theme .arena-wrapper {
+  border: 2px dashed rgba(255, 255, 255, 0.2) !important;
+}
+
+.arena-screen {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  background: var(--arena-screen-bg);
+  border-radius: 16px;
+  overflow: hidden;
+  border: 20px solid #000000; /* Expanded thick black outer layer */
+  box-shadow: 
+    0 10px 30px rgba(0, 0, 0, 0.25),
+    inset 0 0 20px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+}
+
+body.dark-theme .arena-screen {
+  box-shadow: 
+    0 0 0 2.5px rgba(255, 255, 255, 0.16), /* Round outer outline highlight for dark mode visibility */
+    0 15px 40px rgba(0, 0, 0, 0.5),
+    inset 0 0 20px rgba(0, 0, 0, 0.05);
+}
+
+/* Beautiful tactical radar grid */
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(var(--arena-grid-color) 1.5px, transparent 1.5px),
+    linear-gradient(90deg, var(--arena-grid-color) 1.5px, transparent 1.5px);
+  background-size: 5% 5%; /* Detailed tactical grids */
+  opacity: var(--arena-grid-opacity);
+  transition: all 0.3s ease;
+}
+
+.grid-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 30%, var(--arena-screen-bg) 100%);
+  pointer-events: none;
+}
+
+.battle-field {
+  position: absolute;
+  inset: 0;
+}
+
+.bot-position {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: left 0.15s linear, top 0.15s linear; 
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  will-change: left, top;
+}
+
+/* Cyber bot labels */
+.bot-label {
+  margin-top: 8px;
+  background: var(--bot-label-bg);
+  backdrop-filter: blur(4px);
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1.5px solid var(--bot-label-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: all 0.3s ease;
+}
+
+/* Apply team glows dynamically to markers */
+.bot-position[style*="red"] .bot-label {
+  border-color: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+}
+
+.bot-position[style*="red"] .bot-name-text {
+  color: #ef4444;
+  text-shadow: 0 0 5px rgba(239, 68, 68, 0.4);
+}
+
+.bot-position[style*="blue"] .bot-label {
+  border-color: #3b82f6;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.35);
+}
+
+.bot-position[style*="blue"] .bot-name-text {
+  color: #3b82f6;
+  text-shadow: 0 0 5px rgba(59, 130, 246, 0.4);
+}
+
+.bot-name-text {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 900;
+  color: var(--text-main);
+  white-space: nowrap;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.bot-position.bot-frozen .bot-label {
+  border: 1.5px solid #00d4aa;
+  background: var(--bot-label-bg);
+  box-shadow: 0 0 15px rgba(0, 255, 204, 0.35);
+}
+
+.bot-position.bot-frozen .bot-name-text {
+  color: #00d4aa !important;
+  text-shadow: 0 0 6px rgba(0, 255, 204, 0.4);
+}
+
+.freeze-label {
+  display: block;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #00d4aa;
+  margin-top: 2px;
+  text-align: center;
+  text-transform: uppercase;
+  animation: textBlink 1s step-end infinite;
+}
+
+.connection-status {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 800;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  z-index: 20;
+  background: var(--bot-label-bg);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 4px 10px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.15);
+  transition: all 0.3s ease;
+}
+
+body.light-theme .connection-status {
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+}
+
+/* Responsiveness */
+@media (max-width: 900px) {
+  .arena-wrapper {
+    padding: 0.75rem;
+    border-radius: 12px;
+  }
+  
+  .connection-status {
+    top: 0.5rem;
+    right: 0.5rem;
+  }
+}
+
+/* Corner Fans in each corner of the arena screen */
+.corner-fan {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  background: radial-gradient(circle, #f1f5f9 30%, #cbd5e1 90%, #94a3b8 100%);
+  border: 3px solid #334155;
+  border-radius: 8px;
+  box-shadow: 
+    inset 0 0 8px rgba(0, 0, 0, 0.2), 
+    0 4px 6px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+/* Conic-gradient high-speed spinning propeller blades */
+.corner-fan::before {
+  content: '';
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    #475569 35deg,
+    transparent 70deg,
+    transparent 90deg,
+    #475569 125deg,
+    transparent 160deg,
+    transparent 180deg,
+    #475569 215deg,
+    transparent 250deg,
+    transparent 270deg,
+    #475569 305deg,
+    transparent 340deg
+  );
+  border-radius: 50%;
+  animation: none; /* Stationary by default at battle start */
+  transform: rotate(0deg);
+  transition: transform 0.5s ease-out;
+}
+
+/* Spin propeller at high-speed when Range Bot ultimate power is working */
+.corner-fan.working::before {
+  animation: spin-propeller 0.4s linear infinite;
+}
+
+/* Center rivet of the ventilation fan */
+.corner-fan::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #1e293b;
+  border-radius: 50%;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.4);
+}
+
+/* Fan positioning coords inside the 20px border box */
+.corner-fan.top-left {
+  top: 14px;
+  left: 14px;
+}
+.corner-fan.top-right {
+  top: 14px;
+  right: 14px;
+}
+.corner-fan.bottom-left {
+  bottom: 14px;
+  left: 14px;
+}
+.corner-fan.bottom-right {
+  bottom: 14px;
+  right: 14px;
+}
+
+@keyframes spin-propeller {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Humidifier Nozzles mounted near the corners inside the border walls */
+.humidifier {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: radial-gradient(circle, #64748b 20%, #334155 70%, #1e293b 100%); /* Cold, dark gray unlit nozzle by default */
+  border: 2.5px solid #0f172a;
+  border-radius: 50%;
+  z-index: 6;
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.6);
+  transition: all 0.3s ease;
+}
+
+/* Light up with cyan glowing visual center when Tank Bot ultimate power is activated */
+.humidifier.working {
+  background: radial-gradient(circle, #38bdf8 30%, #0ea5e9 80%, #0284c7 100%);
+  border: 2.5px solid #1e293b;
+  box-shadow: 
+    0 0 8px #38bdf8, 
+    0 0 16px rgba(56, 189, 248, 0.6),
+    inset 0 0 3px rgba(0, 0, 0, 0.3);
+}
+
+.humidifier::after {
+  display: none; /* Hidden by default at battle start */
+}
+
+/* Emit soft blue pulsing mist ring active alerts */
+.humidifier.working::after {
+  display: block;
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  right: -5px;
+  bottom: -5px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(56, 189, 248, 0.65);
+  animation: pulse-mist 1.5s infinite ease-out;
+  pointer-events: none;
+}
+
+@keyframes pulse-mist {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* Humidifier Positions - 2 per corner sitting flush on the wall boundaries */
+.top-left-h1 {
+  top: 8px;
+  left: 68px;
+}
+.top-left-h2 {
+  left: 8px;
+  top: 68px;
+}
+
+.top-right-h1 {
+  top: 8px;
+  right: 68px;
+}
+.top-right-h2 {
+  right: 8px;
+  top: 68px;
+}
+
+.bottom-left-h1 {
+  bottom: 8px;
+  left: 68px;
+}
+.bottom-left-h2 {
+  left: 8px;
+  bottom: 68px;
+}
+
+.bottom-right-h1 {
+  bottom: 8px;
+  right: 68px;
+}
+.bottom-right-h2 {
+  right: 8px;
+  bottom: 68px;
+}

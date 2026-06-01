@@ -1,0 +1,31 @@
+.power-box {
+  background-color: #f9fafb; /* Very light grey */
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+}
+
+.power-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.power-ready {
+  color: var(--accent-green);
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: capitalize;
+}
+
+.power-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

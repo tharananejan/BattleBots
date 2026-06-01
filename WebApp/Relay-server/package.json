@@ -1,0 +1,13 @@
+{
+  "name": "battle-bots-relay-server",
+  "version": "1.0.0",
+  "description": "Cloud WebSocket relay server for the Battle Bots project",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "latest",
+    "ws": "latest"
+  }
+}

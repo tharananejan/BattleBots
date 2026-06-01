@@ -1,0 +1,73 @@
+.health-container {
+  margin: 12px 0 4px;
+  width: 100%;
+}
+
+.health-text {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  transition: color 0.3s ease;
+}
+
+.health-text strong {
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+/* Red team health metrics */
+.card-red .health-text strong {
+  color: #ef4444;
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+body.light-theme .card-red .health-text strong {
+  text-shadow: none;
+}
+
+/* Blue team health metrics */
+.card-blue .health-text strong {
+  color: #3b82f6;
+  text-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+}
+
+body.light-theme .card-blue .health-text strong {
+  text-shadow: none;
+}
+
+.health-bar-bg {
+  width: 100%;
+  height: 8px;
+  background-color: var(--health-bg);
+  border: 1px solid var(--health-border);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
+  transition: all 0.3s ease;
+}
+
+body.light-theme .health-bar-bg {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.health-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Red card glowing progress gradient */
+.card-red .health-bar-fill {
+  background: linear-gradient(90deg, #991b1b 0%, #ef4444 100%);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+}
+
+/* Blue card glowing progress gradient */
+.card-blue .health-bar-fill {
+  background: linear-gradient(90deg, #1e40af 0%, #3b82f6 100%);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+}

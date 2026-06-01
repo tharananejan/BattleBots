@@ -1,0 +1,14 @@
+{
+  "name": "battle-bots-workspace",
+  "version": "1.0.0",
+  "description": "Master startup script for Battle Bots tracking and telemetry",
+  "scripts": {
+    "relay": "cd Relay-server && npm start",
+    "backend": "cd Backend && python location.py",
+    "frontend": "cd BattleBotsFrontend && npm start",
+    "start": "concurrently --kill-others \"npm run relay\" \"npm run backend\" \"npm run frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

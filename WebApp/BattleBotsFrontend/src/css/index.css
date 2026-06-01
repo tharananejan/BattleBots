@@ -1,0 +1,29 @@
+:root {
+  /* Light Theme Variables */
+  --bg-body: #f5f7fa;      
+  --card-bg: #ffffff;      
+  --text-primary: #1f2937; 
+  --text-secondary: #6b7280; 
+  --accent-green: #059669; 
+  --border-color: #e5e7eb; 
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-body);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  /* Reduced top padding to move content up */
+  padding: 1rem 2rem; 
+}

@@ -1,0 +1,206 @@
+:root {
+  --header-height: 70px;
+  --app-padding: 1rem;
+  --panel-gap: 1.5rem;
+}
+
+/* Theme configurations */
+body.dark-theme {
+  --bg-body: radial-gradient(circle at center, #0f172a 0%, #050811 100%);
+  --bg-app: rgba(15, 23, 42, 0.1);
+  --border-app: rgba(255, 255, 255, 0.02);
+  --grid-color: rgba(255, 255, 255, 0.004);
+  --text-main: #f8fafc;
+  --text-muted: #64748b;
+  --card-bg: rgba(9, 11, 16, 0.82);
+  --card-border: rgba(255, 255, 255, 0.07); /* Muted border */
+  --header-bg: rgba(9, 11, 16, 0.88);
+  --header-border: rgba(255, 255, 255, 0.04);
+  --sensor-bg: rgba(4, 6, 10, 0.9);
+  --sensor-border: rgba(255, 255, 255, 0.04);
+  --arena-bg: rgba(9, 11, 16, 0.82);
+  --arena-screen-bg: #ececec; /* Premium Off-White for Arena battlefield */
+  --arena-border: rgba(255, 255, 255, 0.07); /* Muted border */
+  --arena-grid-color: rgba(0, 0, 0, 0.06); /* Subtle dark grid lines */
+  --arena-grid-opacity: 0.75;
+  --health-bg: rgba(4, 6, 10, 0.9);
+  --health-border: rgba(255, 255, 255, 0.04);
+  --bot-label-bg: rgba(4, 6, 10, 0.95);
+  --bot-label-border: rgba(255, 255, 255, 0.06);
+  --divider-color: rgba(255, 255, 255, 0.06); /* Muted divider */
+}
+
+body.light-theme {
+  --bg-body: radial-gradient(circle at center, #ffffff 0%, #e2e8f0 100%);
+  --bg-app: rgba(255, 255, 255, 0.4);
+  --border-app: rgba(255, 255, 255, 0.6);
+  --grid-color: rgba(59, 130, 246, 0.015);
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --card-border: rgba(255, 255, 255, 0.6);
+  --header-bg: rgba(255, 255, 255, 0.88);
+  --header-border: rgba(255, 255, 255, 0.6);
+  --sensor-bg: rgba(255, 255, 255, 0.95);
+  --sensor-border: rgba(0, 0, 0, 0.04);
+  --arena-bg: rgba(255, 255, 255, 0.85);
+  --arena-screen-bg: #ffffff; /* Pure White for Arena battlefield */
+  --arena-border: rgba(255, 255, 255, 0.6);
+  --arena-grid-color: rgba(0, 0, 0, 0.07); /* Subtle dark grid lines */
+  --arena-grid-opacity: 0.8;
+  --health-bg: rgba(241, 245, 249, 0.95);
+  --health-border: rgba(0, 0, 0, 0.04);
+  --bot-label-bg: rgba(255, 255, 255, 0.95);
+  --bot-label-border: rgba(59, 130, 246, 0.25);
+  --divider-color: transparent; /* No divider in light mode */
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  overflow: hidden; /* Prevents both horizontal and vertical scrolling */
+  background: var(--bg-body);
+  font-family: 'Outfit', sans-serif;
+  height: 100vh;
+  width: 100vw;
+  color: var(--text-main);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.app-container {
+  width: 100vw; 
+  height: 100vh; 
+  display: flex;
+  flex-direction: column;
+  padding: var(--app-padding);
+  gap: 1rem;
+  background: var(--bg-app);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-app);
+  background-image: 
+    linear-gradient(var(--grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+  background-size: 36px 36px;
+  transition: all 0.3s ease;
+}
+
+.battle-layout {
+  flex: 1;
+  display: grid;
+  /* 1fr (20%) | 3fr (60%) | 1fr (20%) - Balanced full width */
+  grid-template-columns: 1fr 3fr 1fr; 
+  gap: var(--panel-gap);
+  align-items: center;
+  width: 100%;
+  min-height: 0;
+}
+
+.side-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* Red Team Side (Left Panel Divider) */
+.battle-layout > .side-panel:first-child {
+  padding-right: 1.25rem;
+}
+
+/* Blue Team Side (Right Panel Divider) */
+.battle-layout > .side-panel:last-child {
+  padding-left: 1.25rem;
+}
+
+.arena-center {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+/* Game Over Overlay */
+.game-over-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 10, 0.96);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  backdrop-filter: blur(12px);
+  animation: overlayFadeIn 0.4s ease-out;
+}
+
+body.light-theme .game-over-overlay {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.game-over-overlay .overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.over-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 5rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #ef4444;
+  text-shadow: 
+    0 0 20px rgba(239, 68, 68, 0.6),
+    0 0 40px rgba(239, 68, 68, 0.3);
+  margin-bottom: 0.5rem;
+}
+
+.winner-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 2.8rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #3b82f6;
+  text-shadow: 
+    0 0 20px rgba(59, 130, 246, 0.6),
+    0 0 40px rgba(59, 130, 246, 0.3);
+  margin-bottom: 2rem;
+  text-transform: uppercase;
+}
+
+.reset-text {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.2em;
+  text-shadow: none;
+  animation: textBlink 1s step-end infinite;
+}
+
+@keyframes overlayFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(12px);
+  }
+}
+
+@keyframes textBlink {
+  50% {
+    opacity: 0.3;
+  }
+}

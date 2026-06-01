@@ -1,0 +1,144 @@
+.bot-card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  padding: clamp(1rem, 2.5vh, 1.75rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 
+    0 10px 30px rgba(0, 0, 0, 0.35),
+    inset 0 0 15px rgba(255, 255, 255, 0.01);
+  width: 100%;
+  max-height: 95%; /* Prevent vertical overflow in small viewports */
+  font-family: 'Outfit', sans-serif;
+  position: relative;
+}
+
+.bot-card::after {
+  display: none; /* Removed completely */
+}
+
+/* Card Red (Range Bot Striker) */
+body.dark-theme .card-red {
+  border: 2px dashed rgba(239, 68, 68, 0.22) !important;
+}
+
+.card-red:hover {
+  transform: translateY(-4px);
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  box-shadow: 
+    0 15px 35px rgba(0, 0, 0, 0.45),
+    0 0 25px rgba(239, 68, 68, 0.15);
+}
+
+.card-red .bot-name {
+  color: #ef4444;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+}
+
+/* Card Blue (Tank Bot Guardian) */
+body.dark-theme .card-blue {
+  border: 2px dashed rgba(59, 130, 246, 0.22) !important;
+}
+
+.card-blue:hover {
+  transform: translateY(-4px);
+  border-color: rgba(59, 130, 246, 0.5) !important;
+  box-shadow: 
+    0 15px 35px rgba(0, 0, 0, 0.45),
+    0 0 25px rgba(59, 130, 246, 0.15);
+}
+
+.card-blue .bot-name {
+  color: #3b82f6;
+  text-shadow: 0 0 10px rgba(59, 130, 246, 0.35);
+}
+
+.card-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.75rem;
+}
+
+.bot-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bot-avatar {
+  width: clamp(65px, 8vh, 85px);
+  height: clamp(65px, 8vh, 85px);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.card-red .bot-avatar {
+  border-color: rgba(239, 68, 68, 0.3);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.15);
+}
+
+.card-blue .bot-avatar {
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.15);
+}
+
+.bot-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.bot-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(1.1rem, 2.5vh, 1.4rem);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Mode Badges (Manual/Auto) */
+.mode-badge {
+  padding: 4px 14px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.badge-manual {
+  background-color: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.15);
+}
+
+.badge-auto {
+  background-color: rgba(59, 130, 246, 0.08);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
+}
+
+.bot-card .powers-section {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+body.light-theme .bot-card .powers-section {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
