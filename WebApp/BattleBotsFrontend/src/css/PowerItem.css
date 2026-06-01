@@ -46,6 +46,12 @@
   transition: transform 0.12s ease, box-shadow 0.2s ease;
 }
 
+.ability-btn.display-only {
+  cursor: default;
+  pointer-events: none;
+  user-select: none;
+}
+
 .ability-btn.ultimate {
   --btn-size: 66px;
 }

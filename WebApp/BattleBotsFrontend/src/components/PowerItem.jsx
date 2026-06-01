@@ -27,7 +27,8 @@ function getUltimateDisplay(status, activeRemainingMs, cooldownRemainingMs) {
   };
 }
 
-const PowerItem = ({ power, onActivate, disabled }) => {
+/** Display-only; state is driven by ESP/WebSocket, not user clicks. */
+const PowerItem = ({ power }) => {
   const {
     name,
     icon,
@@ -43,7 +44,6 @@ const PowerItem = ({ power, onActivate, disabled }) => {
   const isNormal = type === 'normal';
   const isReady = isUltimatePower ? status === 'ready' : status === 'off';
   const isOn = isNormal && status === 'on';
-  const isBusy = isUltimatePower && !isReady;
 
   const cooldownPct =
     cooldownMs > 0
@@ -70,19 +70,11 @@ const PowerItem = ({ power, onActivate, disabled }) => {
       ? 'on'
       : 'off';
 
-  const handleClick = () => {
-    if (disabled) return;
-    if (isUltimatePower && !isReady) return;
-    onActivate?.(power.id);
-  };
-
   return (
     <div className="power-slot">
-      <button
-        type="button"
-        className={`ability-btn ${displayMode} ${isUltimate ? 'ultimate' : 'normal'} ${disabled ? 'disabled' : ''}`}
-        onClick={handleClick}
-        disabled={disabled || (isUltimatePower && isBusy)}
+      <div
+        role="status"
+        className={`ability-btn display-only ${displayMode} ${isUltimate ? 'ultimate' : 'normal'}`}
         aria-label={`${name}${isUltimate ? ' ultimate' : ''} — ${ariaStatus}`}
         title={name}
       >
@@ -119,7 +111,7 @@ const PowerItem = ({ power, onActivate, disabled }) => {
             </>
           )}
         </span>
-      </button>
+      </div>
       <span className="ability-label">{name}</span>
     </div>
   );

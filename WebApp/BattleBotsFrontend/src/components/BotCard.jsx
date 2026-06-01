@@ -4,7 +4,7 @@ import PowerItem from './PowerItem';
 import { sortPowersForDisplay } from '../constants/botPowers';
 import '../css/BotCard.css';
 
-const BotCard = ({ botData, onPowerActivate, powersDisabled }) => {
+const BotCard = ({ botData }) => {
   const {
     name,
     avatar,
@@ -38,12 +38,7 @@ const BotCard = ({ botData, onPowerActivate, powersDisabled }) => {
 
       <div className="powers-section" role="toolbar" aria-label={`${name} abilities`}>
         {sortedPowers.map((power) => (
-          <PowerItem
-            key={power.id}
-            power={power}
-            onActivate={onPowerActivate}
-            disabled={powersDisabled}
-          />
+          <PowerItem key={power.id} power={power} />
         ))}
       </div>
     </div>

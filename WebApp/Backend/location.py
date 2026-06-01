@@ -1,11 +1,14 @@
+import asyncio
 import json
 import math
+import queue
+import threading
 import time
 
 import cv2 as cv
 import numpy as np
 import serial
-
+import websockets
 
 SERIAL_PORT = "COM14"
 BAUD_RATE = 115200
@@ -14,6 +17,69 @@ FRAME_SIZE = 480
 MIN_CONTOUR_AREA = 400
 TURN_DEADBAND_DEGREES = 20
 FORWARD_MAX_ERROR_DEGREES = 90
+
+WS_HOST = "127.0.0.1"
+WS_PORT = 8765
+
+# BattleGroundv2.ino serial strings when relays energize
+RELAY_LINE_TO_POWER = {
+    "Fan relay activated": "fan",
+    "Laser relay activated": "laser",
+    "Humidifier relay activated": "humidifier",
+}
+
+outbound_queue: queue.Queue[str | None] = queue.Queue()
+
+
+def ws_broadcast(payload: dict) -> None:
+    outbound_queue.put(json.dumps(payload))
+
+
+async def _ws_broadcast_loop(clients: set) -> None:
+    while True:
+        await asyncio.sleep(0.01)
+        while True:
+            try:
+                message = outbound_queue.get_nowait()
+            except queue.Empty:
+                break
+            if message is None:
+                return
+            dead = []
+            for client in list(clients):
+                try:
+                    await client.send(message)
+                except Exception:
+                    dead.append(client)
+            for client in dead:
+                clients.discard(client)
+
+
+async def _ws_server(clients: set) -> None:
+    async def handler(websocket):
+        clients.add(websocket)
+        print("WebSocket client connected")
+        try:
+            await websocket.wait_closed()
+        finally:
+            clients.discard(websocket)
+            print("WebSocket client disconnected")
+
+    broadcaster = asyncio.create_task(_ws_broadcast_loop(clients))
+    async with websockets.serve(handler, WS_HOST, WS_PORT):
+        print(f"WebSocket server listening on ws://{WS_HOST}:{WS_PORT}")
+        await asyncio.Future()
+
+
+def start_websocket_server() -> None:
+    clients: set = set()
+
+    def run():
+        asyncio.run(_ws_server(clients))
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    time.sleep(0.3)
 
 
 def open_serial():
@@ -27,24 +93,50 @@ def open_serial():
         return None
 
 
-def read_latest_telemetry(connection, current_heading):
-    if connection is None or not connection.in_waiting:
+def process_serial_line(line: str, current_heading: float) -> float:
+    """Parse ESP serial; broadcast telemetry and relay events. Returns updated heading."""
+    if not line:
         return current_heading
 
-    latest_line = ""
-    while connection.in_waiting:
-        latest_line = connection.readline().decode(errors="ignore").strip()
+    for pattern, power_id in RELAY_LINE_TO_POWER.items():
+        if pattern in line:
+            print(f"Relay event -> {power_id}")
+            ws_broadcast({"power_activated": power_id})
+            return current_heading
 
-    if not latest_line.startswith("{"):
+    if not line.startswith("{"):
         return current_heading
 
     try:
-        data = json.loads(latest_line)
+        data = json.loads(line)
     except json.JSONDecodeError:
         return current_heading
 
     heading = data.get("m1", current_heading)
-    print("ESP -> m1:", heading)
+    telemetry = {
+        "m1": data.get("m1", 0),
+        "d1": 1 if data.get("d1") else 0,
+        "ir1": 1 if data.get("ir1") else 0,
+        "ir2": 1 if data.get("ir2") else 0,
+        "hall": data.get("hall", 9999),
+    }
+    if "rangeHealth" in data:
+        telemetry["rangeHealth"] = data["rangeHealth"]
+    if "tankHealth" in data:
+        telemetry["tankHealth"] = data["tankHealth"]
+    ws_broadcast(telemetry)
+    print("ESP telemetry:", telemetry)
+    return heading
+
+
+def drain_serial(connection, current_heading: float) -> float:
+    if connection is None or not connection.in_waiting:
+        return current_heading
+
+    heading = current_heading
+    while connection.in_waiting:
+        line = connection.readline().decode(errors="ignore").strip()
+        heading = process_serial_line(line, heading)
     return heading
 
 
@@ -105,7 +197,22 @@ def open_camera(preferred_index, frame_size):
     return None, None, None
 
 
+def broadcast_positions(blue_marker, red_marker):
+    payload = {}
+    if blue_marker is not None:
+        bx, by, _ = blue_marker
+        payload["blue_x"] = bx
+        payload["blue_y"] = by
+    if red_marker is not None:
+        rx, ry, _ = red_marker
+        payload["red_x"] = rx
+        payload["red_y"] = ry
+    if payload:
+        ws_broadcast(payload)
+
+
 def main():
+    start_websocket_server()
     ser = open_serial()
 
     cap, used_index, used_backend = open_camera(CAMERA_INDEX, FRAME_SIZE)
@@ -126,7 +233,7 @@ def main():
 
     try:
         while True:
-            heading = read_latest_telemetry(ser, heading)
+            heading = drain_serial(ser, heading)
 
             ret, frame = cap.read()
             if not ret or frame is None:
@@ -150,6 +257,7 @@ def main():
 
             blue_marker = find_largest_marker(mask_blue)
             red_marker = find_largest_marker(mask_red)
+            broadcast_positions(blue_marker, red_marker)
 
             if blue_marker is not None:
                 bx, by, br = blue_marker
@@ -223,6 +331,7 @@ def main():
                 pass
 
     finally:
+        outbound_queue.put(None)
         send_stop(ser)
         if ser is not None:
             ser.close()

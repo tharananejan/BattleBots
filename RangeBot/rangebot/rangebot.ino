@@ -93,7 +93,8 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
 
 
   }
-  uint8_t rangeRemoteMac[] = {0x10, 0x20, 0xBA, 0x4C, 0x5C, 0xC4};  
+  uint8_t rangeRemoteMac[] = {0x10, 0x20, 0xBA, 0x4C, 0x5C, 0xC4};
+  uint8_t battleGroundMac[] = {0x10, 0x20, 0xBA, 0x4C, 0x50, 0x8C};
 
 
 void onDataSent(const wifi_tx_info_t *mac_addr, esp_now_send_status_t status) {
@@ -101,14 +102,14 @@ void onDataSent(const wifi_tx_info_t *mac_addr, esp_now_send_status_t status) {
   // Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
   }
 
-//making the structure 
+// Telemetry to BattleGround (layout must match BattleGround RangeBotTelemetry)
   typedef struct {
-      int x;
-      bool r1;
-      bool r2;
+      int piezo;
+      bool ir1;
+      bool ir2;
       float m1;
-    }damageData;
-    damageData damages;
+    } RangeBotTelemetry;
+    RangeBotTelemetry damages;
 
 
 //Motor Module
@@ -196,8 +197,15 @@ void setup() {
     return;
   }
   else {
-    Serial.println("Peer added successfully!");
+    Serial.println("Range remote peer added");
   }
+
+  memcpy(peerInfo.peer_addr, battleGroundMac, 6);
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add BattleGround peer!");
+    return;
+  }
+  Serial.println("BattleGround peer added");
   
 
 
@@ -212,9 +220,9 @@ void loop() {
   mpu.begin();
 
   sensor1State = digitalRead(irSensor1Pin);
-  damages.r1 = sensor1State; 
+  damages.ir1 = sensor1State;
   sensor2State = digitalRead(irSensor2Pin);
-  damages.r2 = sensor2State; 
+  damages.ir2 = sensor2State; 
   // if (sensor1State == HIGH) {
   //   Serial.print("Out of range 1 \t");
   // } else {
@@ -237,8 +245,7 @@ void loop() {
   //PIEZO
 
     sensorValue = analogRead(sensorPin);
-    //Serial.print("PiezoValue: \t");
-    damages.x = sensorValue ; 
+    damages.piezo = sensorValue; 
     // Serial.println(sensorValue);
 
 
@@ -275,13 +282,9 @@ void loop() {
 
   //sending data through server
   if ((millis() - telemetryTimer) > 100) {
-    esp_err_t result = esp_now_send(rangeRemoteMac, (uint8_t *)&damages, sizeof(damages));
+    esp_now_send(rangeRemoteMac, (uint8_t *)&damages, sizeof(damages));
+    esp_now_send(battleGroundMac, (uint8_t *)&damages, sizeof(damages));
     telemetryTimer = millis();
-    if (result == ESP_OK) {
-    // Serial.println("Success");
-    } else {
-    // Serial.println("Send failed");
-    }
   }
 
 }
