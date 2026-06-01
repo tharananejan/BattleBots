@@ -14,6 +14,7 @@ typedef struct {
   int piezo;
   bool ir1;
   bool ir2;
+  bool humidityHit;
   float m1;
 } RangeBotTelemetry;
 
@@ -74,6 +75,7 @@ unsigned long humidifierStartTime = 0;
 uint8_t rangeBotHealth = 100;
 uint8_t tankBotHealth = 100;
 const int RANGE_DAMAGE = 5;
+const int RANGE_HUMIDITY_DAMAGE = 5;
 const int TANK_LASER_DAMAGE = 10;
 const int TANK_IR_DAMAGE = 2;
 const int PIEZO_HIT_THRESHOLD = 400;
@@ -83,6 +85,7 @@ const unsigned long SERIAL_STATE_MS = 200;
 const unsigned long MATCH_RESET_MS = 5000;
 
 unsigned long lastRangeDamageMs = 0;
+unsigned long lastRangeHumidityDamageMs = 0;
 unsigned long lastTankLaserDamageMs = 0;
 unsigned long lastTankIrDamageMs = 0;
 unsigned long lastStateBroadcastMs = 0;
@@ -141,17 +144,27 @@ void applyRangeDamage(const RangeBotTelemetry &t) {
   if (rangeBotHealth == 0) return;
 
   bool hit = (t.piezo > PIEZO_HIT_THRESHOLD || t.ir1 || t.ir2);
-  if (!hit) return;
-  if (millis() - lastRangeDamageMs < DAMAGE_DEBOUNCE_MS) return;
-
-  lastRangeDamageMs = millis();
-  if (rangeBotHealth > RANGE_DAMAGE) {
-    rangeBotHealth -= RANGE_DAMAGE;
-  } else {
-    rangeBotHealth = 0;
+  if (hit && (millis() - lastRangeDamageMs >= DAMAGE_DEBOUNCE_MS)) {
+    lastRangeDamageMs = millis();
+    if (rangeBotHealth > RANGE_DAMAGE) {
+      rangeBotHealth -= RANGE_DAMAGE;
+    } else {
+      rangeBotHealth = 0;
+    }
+    Serial.print("RangeBot IR/piezo damage -> health ");
+    Serial.println(rangeBotHealth);
   }
-  Serial.print("RangeBot damage -> health ");
-  Serial.println(rangeBotHealth);
+
+  if (t.humidityHit && (millis() - lastRangeHumidityDamageMs >= DAMAGE_DEBOUNCE_MS)) {
+    lastRangeHumidityDamageMs = millis();
+    if (rangeBotHealth > RANGE_HUMIDITY_DAMAGE) {
+      rangeBotHealth -= RANGE_HUMIDITY_DAMAGE;
+    } else {
+      rangeBotHealth = 0;
+    }
+    Serial.print("RangeBot humidity damage -> health ");
+    Serial.println(rangeBotHealth);
+  }
 }
 
 void applyTankDamage(const TankBotTelemetry &t) {

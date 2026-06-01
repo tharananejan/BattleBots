@@ -83,6 +83,7 @@ typedef struct {
   int d1;
   bool ir1;
   bool ir2;
+  bool humidityHit;
   float m1;
 } ReceivingData;
 
@@ -127,7 +128,7 @@ void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
   if (len == sizeof(ReceivingData)) {
     ReceivingData receivedData;
     memcpy(&receivedData, incomingData, sizeof(receivedData));
-    int hit = (receivedData.d1 > 400 || receivedData.ir1 || receivedData.ir2) ? 1 : 0;
+    int hit = (receivedData.d1 > 400 || receivedData.ir1 || receivedData.ir2 || receivedData.humidityHit) ? 1 : 0;
     if (hit) {
       digitalWrite(damage, HIGH);
       damageLedOn = true;

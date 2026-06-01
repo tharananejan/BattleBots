@@ -26,7 +26,10 @@
 
 //MPU6050
   MPU6050 mpu(I2C_1);
-  // Adafruit_HTU21DF htu = Adafruit_HTU21DF();
+  Adafruit_HTU21DF htu = Adafruit_HTU21DF();
+
+// Humidity damage threshold (%)
+  const float HUMIDITY_DAMAGE_THRESHOLD = 93.0;
 
 //timers
   unsigned long timer = 0;
@@ -107,6 +110,7 @@ void onDataSent(const wifi_tx_info_t *mac_addr, esp_now_send_status_t status) {
       int piezo;
       bool ir1;
       bool ir2;
+      bool humidityHit;
       float m1;
     } RangeBotTelemetry;
     RangeBotTelemetry damages;
@@ -178,11 +182,11 @@ void setup() {
   Serial.print("Done\n");
 
   //HTU
-  // if (!htu.begin(&I2C_2)) { // some HTU libraries allow this form
-  //   Serial.println("HTU21D not found!");
-  // } else {
-  //   Serial.println("HTU21D ready");
-  // }
+  if (!htu.begin(&I2C_2)) {
+    Serial.println("HTU21D not found!");
+  } else {
+    Serial.println("HTU21D ready");
+  }
 
   //WifiServer2- sending
   esp_now_register_send_cb(onDataSent);
@@ -235,12 +239,31 @@ void loop() {
   // }
 
   //HTU
+  float temp = htu.readTemperature();
+  float humidity = htu.readHumidity();
 
-  // float temp = htu.readTemperature();
-  // float humidity = htu.readHumidity();
+  if (!isnan(humidity)) {
+    damages.humidityHit = (humidity > HUMIDITY_DAMAGE_THRESHOLD);
+  } else {
+    damages.humidityHit = false;
+  }
 
-  // Serial.print("Temp: "); Serial.print(temp);
-  // Serial.print(" °C  Humidity: "); Serial.print(humidity); Serial.print(" % \t");
+  if ((millis() - timer3) > 500) {
+    Serial.print("Temp: ");
+    Serial.print(isnan(temp) ? -999.0f : temp);
+    Serial.print(" C  Humidity: ");
+    if (isnan(humidity)) {
+      Serial.print("ERR");
+    } else {
+      Serial.print(humidity);
+      Serial.print(" %");
+      if (damages.humidityHit) {
+        Serial.print(" [WARNING: HIGH HUMIDITY - TAKING DAMAGE]");
+      }
+    }
+    Serial.println();
+    timer3 = millis();
+  }
 
   //PIEZO
 
