@@ -22,9 +22,6 @@ const App = () => {
     bots,
     gameState,
     winner,
-    powersDisabled,
-    activateRangePower,
-    activateTankPower,
   } = useBattleLogic('ws://127.0.0.1:8765');
 
   if (!bots || bots.length < 2) return null;
@@ -67,21 +64,13 @@ const App = () => {
 
       <main className="battle-layout">
         <aside className="side-panel">
-          <BotCard
-            botData={rangeBot}
-            onPowerActivate={activateRangePower}
-            powersDisabled={powersDisabled}
-          />
+          <BotCard botData={rangeBot} />
         </aside>
         <section className="arena-center">
           <Arena bots={bots} />
         </section>
         <aside className="side-panel">
-          <BotCard
-            botData={tankBot}
-            onPowerActivate={activateTankPower}
-            powersDisabled={powersDisabled}
-          />
+          <BotCard botData={tankBot} />
         </aside>
       </main>
     </div>

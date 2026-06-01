@@ -26,6 +26,9 @@ const initialTelemetry = {
 
 const TICK_MS = 100;
 
+const RANGE_POWER_IDS = new Set(['fan', 'laser', 'dodge']);
+const TANK_POWER_IDS = new Set(['humidifier', 'hammer']);
+
 function tickUltimatePowers(powers) {
   let changed = false;
 
@@ -111,6 +114,7 @@ function toggleNormalPower(powers, powerId) {
 export const useBattleLogic = (url) => {
   const [telemetry, setTelemetry] = useState(initialTelemetry);
   const [rangeBotHealth, setRangeBotHealth] = useState(100);
+  const [tankBotHealth, setTankBotHealth] = useState(100);
   const [rangePowers, setRangePowers] = useState(initRangePowers);
   const [tankPowers, setTankPowers] = useState(initTankPowers);
   const [tankMode, setTankMode] = useState('Manual');
@@ -118,7 +122,6 @@ export const useBattleLogic = (url) => {
   const [gameState, setGameState] = useState('ACTIVE');
   const [winner, setWinner] = useState(null);
 
-  const hasDeductedRef = useRef(false);
   const isLockedRef = useRef(false);
   const hallFreezeTriggeredRef = useRef(false);
   const FRAME_SIZE = 480;
@@ -136,23 +139,25 @@ export const useBattleLogic = (url) => {
       connected: prev.connected,
     }));
     setRangeBotHealth(100);
+    setTankBotHealth(100);
     setRangePowers(initRangePowers());
     setTankPowers(initTankPowers());
     setTankMode('Manual');
     setTankFrozenUntil(0);
     setGameState('ACTIVE');
     setWinner(null);
-    hasDeductedRef.current = false;
-
     setTimeout(() => {
       isLockedRef.current = false;
     }, 1500);
   }, []);
 
-  const rangeBotHealthRef = useRef(rangeBotHealth);
+  const gameStateRef = useRef(gameState);
+  const activateRangePowerRef = useRef(null);
+  const activateTankPowerRef = useRef(null);
+
   useEffect(() => {
-    rangeBotHealthRef.current = rangeBotHealth;
-  }, [rangeBotHealth]);
+    gameStateRef.current = gameState;
+  }, [gameState]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -181,7 +186,21 @@ export const useBattleLogic = (url) => {
 
       try {
         const data = JSON.parse(event.data);
-        setTelemetry((prev) => ({ ...prev, ...data }));
+
+        if (data.power_activated) {
+          const powerId = data.power_activated;
+          if (gameStateRef.current === 'ACTIVE') {
+            if (RANGE_POWER_IDS.has(powerId)) {
+              activateRangePowerRef.current?.(powerId);
+            } else if (TANK_POWER_IDS.has(powerId)) {
+              activateTankPowerRef.current?.(powerId);
+            }
+          }
+          return;
+        }
+
+        const { power_activated: _ignored, ...telemetryUpdate } = data;
+        setTelemetry((prev) => ({ ...prev, ...telemetryUpdate }));
 
         if (data.isAutomatedMode !== undefined) {
           setTankMode(data.isAutomatedMode ? 'Auto' : 'Manual');
@@ -200,18 +219,28 @@ export const useBattleLogic = (url) => {
           }
         }
 
-        if (data.d1 === 1 && gameState === 'ACTIVE') {
-          if (!hasDeductedRef.current) {
-            const newHealth = Math.max(0, rangeBotHealthRef.current - 50);
-            setRangeBotHealth(newHealth);
-            hasDeductedRef.current = true;
-            if (newHealth <= 0) {
-              setGameState('GAMEOVER');
-              setWinner('Tank Bot');
-            }
+        if (data.rangeHealth !== undefined) {
+          const rangeHp = Math.max(0, Math.min(100, Number(data.rangeHealth)));
+          setRangeBotHealth(rangeHp);
+          if (
+            gameStateRef.current === 'ACTIVE' &&
+            rangeHp <= 0
+          ) {
+            setGameState('GAMEOVER');
+            setWinner('Tank Bot');
           }
-        } else {
-          hasDeductedRef.current = false;
+        }
+
+        if (data.tankHealth !== undefined) {
+          const tankHp = Math.max(0, Math.min(100, Number(data.tankHealth)));
+          setTankBotHealth(tankHp);
+          if (
+            gameStateRef.current === 'ACTIVE' &&
+            tankHp <= 0
+          ) {
+            setGameState('GAMEOVER');
+            setWinner('Range Bot');
+          }
         }
       } catch (err) {
         console.error(err);
@@ -270,6 +299,11 @@ export const useBattleLogic = (url) => {
     [gameState]
   );
 
+  useEffect(() => {
+    activateRangePowerRef.current = activateRangePower;
+    activateTankPowerRef.current = activateTankPower;
+  }, [activateRangePower, activateTankPower]);
+
   const isTankFrozen = tankFrozenUntil > Date.now();
 
   const getBots = () => {
@@ -293,7 +327,7 @@ export const useBattleLogic = (url) => {
         id: 'bot2',
         name: 'Tank Bot',
         color: 'blue',
-        currentHealth: 100,
+        currentHealth: tankBotHealth,
         maxHealth: 100,
         mode: tankMode,
         powers: tankPowers,
@@ -306,7 +340,6 @@ export const useBattleLogic = (url) => {
   };
 
   const bots = getBots();
-  const powersDisabled = gameState !== 'ACTIVE';
 
   return {
     telemetry,
@@ -314,9 +347,6 @@ export const useBattleLogic = (url) => {
     FRAME_SIZE,
     gameState,
     winner,
-    powersDisabled,
-    activateRangePower,
-    activateTankPower,
     isTankFrozen,
   };
 };

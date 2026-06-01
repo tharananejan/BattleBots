@@ -20,6 +20,7 @@
 #define SERVO_PIN 11 // UPDATED: Servo is now on pin 11
 
 uint8_t remoteMac[] = { 0xA0, 0xF2, 0x62, 0xE0, 0x47, 0xCC };
+uint8_t battleGroundMac[] = { 0x10, 0x20, 0xBA, 0x4C, 0x50, 0x8C };
 // A0:F2:62:E0:47:CC
 uint8_t bridgeMac[6] = { 0 };
 bool hasBridgePeer = false;
@@ -44,6 +45,7 @@ typedef struct {
   bool isAutomatedMode;
 } RemoteCommandData;
 
+// Layout must match BattleGround TankBotTelemetry
 typedef struct {
   bool laserValue;
   bool ir1Value;
@@ -314,7 +316,14 @@ void setup() {
     Serial.println("Failed to add peer");
     return;
   }
-  
+
+  memcpy(peerInfo.peer_addr, battleGroundMac, 6);
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add BattleGround peer");
+    return;
+  }
+  Serial.println("BattleGround peer added");
+
   esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
 }
 
@@ -369,6 +378,7 @@ void loop() {
 
 void sendTelemetry() {
   esp_now_send(remoteMac, (uint8_t *)&sensorData, sizeof(sensorData));
+  esp_now_send(battleGroundMac, (uint8_t *)&sensorData, sizeof(sensorData));
 
   if (hasBridgePeer) {
     esp_now_send(bridgeMac, (uint8_t *)&sensorData, sizeof(sensorData));

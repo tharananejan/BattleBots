@@ -51,17 +51,22 @@ bool btn2HoldHandled = false;
 unsigned long manualDisplayUntil = 0;
 
 // Global health variable (0-100 range assumed)
-volatile int currentHealth = 100; 
+volatile int currentHealth = 100;
+volatile int enemyHealth = 100;
+unsigned long lastBattleGroundMsgTime = 0;
+const unsigned long BG_TIMEOUT_MS = 2000;
 
-// Define the amount of damage taken per hit
-const int DAMAGE_PER_HIT = 10;
-const int DAMAGE_PER_HIT_IR = 2;
-const int HALL_THRESHOLD = 100; // Threshold for Hall sensor to trigger freeze
+const int HALL_THRESHOLD = 100;
 
 // LED
 const int damage = LED_BUILTIN;
 
 
+
+typedef struct {
+  uint8_t rangeHealth;
+  uint8_t tankHealth;
+} GlobalStateData;
 
 typedef struct {
   int x1;
@@ -85,8 +90,26 @@ ControllerData ctrlData;
 
 esp_now_peer_info_t peerInfo;
 
+void drawCenteredText(const char *text, uint8_t textSize, int16_t y) {
+  display.setTextSize(textSize);
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+  display.setCursor((SCREEN_WIDTH - (int16_t)w) / 2, y);
+  display.println(text);
+}
+
+void showLoadingScreen() {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  drawCenteredText("Mahasona", 2, 8);
+  drawCenteredText("Squad", 2, 32);
+  display.display();
+  delay(1000);
+}
+
 // Callback when data is sent
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
   Serial.print("\r\nLast Packet Send Status:\t");
   if (status == ESP_NOW_SEND_SUCCESS) {
     Serial.println("Data sent successfully");
@@ -96,62 +119,48 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 }
 
 // Callback when data is received
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+void OnDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData, int len) {
+  const uint8_t *mac = recv_info->src_addr;
+  if (len == sizeof(GlobalStateData) && memcmp(mac, battleGroundMac, 6) == 0) {
+    GlobalStateData state;
+    memcpy(&state, incomingData, sizeof(state));
+    lastBattleGroundMsgTime = millis();
+    if (state.tankHealth < currentHealth) {
+      digitalWrite(damage, HIGH);
+      delay(50);
+      digitalWrite(damage, LOW);
+    }
+    currentHealth = state.tankHealth;
+    enemyHealth = state.rangeHealth;
+    return;
+  }
+
   if (len == sizeof(ReceivingData)) {
     ReceivingData receivedData;
     memcpy(&receivedData, incomingData, sizeof(receivedData));
-    
+
     bool receivedHitSignal = receivedData.d1;
     bool irDamage = (receivedData.ir1 || receivedData.ir2);
     int receivedHallValue = receivedData.hallValue;
-    
-    Serial.print("Received laser: "); Serial.print(receivedHitSignal);
-    Serial.print(" Hall Value: "); Serial.println(receivedHallValue);
-    Serial.println("Received");
-    
-    // --- 1. FREEZE LOGIC (Triggered by Hall Sensor Value) ---
-    bool freezeSignal = (receivedHallValue < HALL_THRESHOLD);
 
+    bool freezeSignal = (receivedHallValue < HALL_THRESHOLD);
     if (freezeSignal && !isFrozen) {
       isFrozen = true;
       freezeStartTime = millis();
       Serial.println("!!! FREEZE ACTIVATED for 10 seconds (Hall) !!!");
     }
 
-    // --- 2. LASER GUN DAMAGE LOGIC (d1) ---
-    if (!receivedHitSignal) {
-      currentHealth -= DAMAGE_PER_HIT;
-      if (currentHealth < 0) {
-        currentHealth = 0;
-      }
-      Serial.print("Health Deducted by Laser! Current Health: ");
-      Serial.println(currentHealth);
-      
+    if (!receivedHitSignal || irDamage) {
       digitalWrite(damage, HIGH);
       delay(50);
       digitalWrite(damage, LOW);
-    }
-
-    // --- 3. IR DAMAGE LOGIC (ir1/ir2) ---
-    if (irDamage) { 
-      currentHealth -= DAMAGE_PER_HIT_IR;
-      if (currentHealth < 0) {
-        currentHealth = 0;
-      }
-      Serial.print("Health Deducted by IR! Current Health: ");
-      Serial.println(currentHealth);
-      
-      digitalWrite(damage, HIGH);
-      delay(50);
-      digitalWrite(damage, LOW);
-      
-    } else if (receivedHitSignal < 400 && !irDamage) {
+    } else if (receivedHitSignal && !irDamage) {
       digitalWrite(damage, LOW);
     }
-
-  } else {
-    Serial.println("Received unexpected data size.");
+    return;
   }
+
+  Serial.println("Received unexpected data size.");
 }
  
 void setup() {
@@ -179,10 +188,8 @@ void setup() {
     while (true);
   }
   //display.setRotation();
-  display.clearDisplay();
-  display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.display();
+  showLoadingScreen();
 
   // Init ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -191,7 +198,7 @@ void setup() {
   }
 
 
-  esp_now_register_send_cb(esp_now_send_cb_t(OnDataSent));
+  esp_now_register_send_cb(OnDataSent);
   
   // Register peer
   memcpy(peerInfo.peer_addr, broadcastAddress, 6);
@@ -213,7 +220,7 @@ void setup() {
   }
 
   // Register for a callback function that will be called when data is received
-  esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
+  esp_now_register_recv_cb(OnDataRecv);
 }
  
 void handleModeHold(unsigned long currentTime, bool btn2Down) {
@@ -253,7 +260,7 @@ void loop() {
 
   ctrlData.isAutomatedMode = isAutomatedMode;
 
-  if (!isFrozen && !isAutomatedMode) {
+  if (currentHealth > 0 && !isFrozen && !isAutomatedMode) {
     bool isReady = (currentTime - lastPressTime >= BUTTON_COOLDOWN);
     bool justPressed = false;
 
@@ -283,7 +290,7 @@ void loop() {
     if (justPressed) {
       ctrlData.btn1 = false;
     }
-  } else if (!isFrozen && isAutomatedMode) {
+  } else if (currentHealth > 0 && !isFrozen && isAutomatedMode) {
     ctrlData.x1 = JOYSTICK_CENTER;
     ctrlData.y1 = JOYSTICK_CENTER;
     ctrlData.sw1 = false;
@@ -304,42 +311,55 @@ void loop() {
   }
 
   display.clearDisplay();
-  display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
 
-  if (isFrozen) {
-    unsigned long timePassed = currentTime - freezeStartTime;
-    unsigned long timeRemaining = (timePassed < FREEZE_DURATION) ? (FREEZE_DURATION - timePassed) : 0;
-    display.print("FREEZE! ");
-    display.print(timeRemaining / 1000);
-    display.println("s");
-  } else if (isAutomatedMode) {
-    display.println("Automated");
-  } else if (currentTime < manualDisplayUntil) {
-    display.println("Manual");
+  bool battleGroundConnected = (lastBattleGroundMsgTime > 0) &&
+                               (currentTime - lastBattleGroundMsgTime <= BG_TIMEOUT_MS);
+
+  if (!battleGroundConnected) {
+    drawCenteredText("BattleGround", 1, 16);
+    drawCenteredText("Not Connected", 1, 32);
+  } else if (currentHealth == 0) {
+    drawCenteredText("Game Over", 2, 20);
+  } else if (enemyHealth == 0) {
+    drawCenteredText("Victory", 2, 20);
   } else {
-    bool isReady = (currentTime - lastPressTime >= BUTTON_COOLDOWN);
-    if (isReady) {
-      display.println("READY");
-    } else {
-      display.print("NR ");
-    }
+    display.setTextSize(1);
+    display.setCursor(0, 0);
 
-    const int BAR_X = 0;
-    const int BAR_Y = 20;
-    const int MAX_BAR_WIDTH = 128;
-    const int BAR_HEIGHT = 10;
-    int fillWidth = map(currentHealth, 0, 100, 0, MAX_BAR_WIDTH);
-    fillWidth = constrain(fillWidth, 0, MAX_BAR_WIDTH);
-    display.drawRect(BAR_X, BAR_Y, MAX_BAR_WIDTH, BAR_HEIGHT, SSD1306_WHITE);
-    if (fillWidth > 0) {
-      display.fillRect(BAR_X + 1, BAR_Y + 1, fillWidth - 2, BAR_HEIGHT - 2, SSD1306_WHITE);
+    if (isFrozen) {
+      unsigned long timePassed = currentTime - freezeStartTime;
+      unsigned long timeRemaining = (timePassed < FREEZE_DURATION) ? (FREEZE_DURATION - timePassed) : 0;
+      display.print("FREEZE! ");
+      display.print(timeRemaining / 1000);
+      display.println("s");
+    } else if (isAutomatedMode) {
+      display.println("Automated");
+    } else if (currentTime < manualDisplayUntil) {
+      display.println("Manual");
+    } else {
+      bool isReady = (currentTime - lastPressTime >= BUTTON_COOLDOWN);
+      if (isReady) {
+        display.println("READY");
+      } else {
+        display.print("NR ");
+      }
+
+      const int BAR_X = 0;
+      const int BAR_Y = 20;
+      const int MAX_BAR_WIDTH = 128;
+      const int BAR_HEIGHT = 10;
+      int fillWidth = map(currentHealth, 0, 100, 0, MAX_BAR_WIDTH);
+      fillWidth = constrain(fillWidth, 0, MAX_BAR_WIDTH);
+      display.drawRect(BAR_X, BAR_Y, MAX_BAR_WIDTH, BAR_HEIGHT, SSD1306_WHITE);
+      if (fillWidth > 0) {
+        display.fillRect(BAR_X + 1, BAR_Y + 1, fillWidth - 2, BAR_HEIGHT - 2, SSD1306_WHITE);
+      }
+      display.setCursor(0, 50);
+      display.print("HP: ");
+      display.print(currentHealth);
+      display.print("/100");
     }
-    display.setCursor(0, 50);
-    display.print("HP: ");
-    display.print(currentHealth);
-    display.print("/100");
   }
 
   display.display();
