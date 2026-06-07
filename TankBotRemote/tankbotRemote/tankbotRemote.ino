@@ -32,8 +32,8 @@ const int VRx1 = 17;
 const int VRy1 = 16;
 const int joySW1 = 11;
 // Push buttons (For sending commands)
-const int btn1 = 4;
-const int btn2 = 5;
+const int btn1 = 6;
+const int btn2 = 5; //Humididfier
 
 // --- RATE LIMITING / DEBOUNCE VARIABLES FOR btn1 ---
 const unsigned long BUTTON_COOLDOWN = 10000;
