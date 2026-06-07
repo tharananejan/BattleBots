@@ -65,10 +65,17 @@ unsigned long lastTelemetryTime = 0;
 unsigned long freezeStartTime = 0;
 bool isFrozen = false;
 
-// ---------------- Servo Variables ----------------
+// ---------------- Servo / Hammer Variables ----------------
 Servo myServo;
-bool lastBtn2State = false; // UPDATED: Tracks previous state of remote btn2
-bool servoAt180 = false;    // Tracks the current position of the servo
+bool lastBtn1State = false;
+
+enum HammerState { HAMMER_IDLE, HAMMER_STRIKING, HAMMER_RETURNING };
+HammerState hammerState = HAMMER_IDLE;
+int currentHammerAngle = 0;
+unsigned long lastHammerStepTime = 0;
+
+const int HAMMER_STEP_DELAY = 10;
+const int HAMMER_STEP_SIZE = 6;
 
 // Forward declaration of functions
 void moveMotor();
@@ -81,19 +88,20 @@ void motorStop();
 bool isSameMac(const uint8_t *a, const uint8_t *b);
 bool isManualActive(const RemoteCommandData &commandData);
 void addBridgePeerIfNeeded(const uint8_t *mac);
-void handleServoToggle(const RemoteCommandData &commandData);
+void handleHammerStrike(const RemoteCommandData &commandData);
+void printRemoteCommandData(const char *label, const RemoteCommandData &data);
 void sendTelemetry();
 
 // Callback when data is sent
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Failed");
+  // Serial.print("\r\nLast Packet Send Status:\t");
+  // Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Failed");
 }
 
 // Callback when data is received
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
   if (len != sizeof(RemoteCommandData)) {
-    Serial.println("Unexpected command size");
+    // Serial.println("Unexpected command size");
     return;
   }
 
@@ -103,7 +111,6 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
   if (isSameMac(mac, remoteMac)) {
     manualData = incomingCommand;
     lastManualTime = millis();
-    handleServoToggle(manualData);
   } else {
     autoData = incomingCommand;
     lastAutoTime = millis();
@@ -112,30 +119,27 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
 
   // Run movement logic immediately whenever new data arrives
   moveMotor();
-
-  // Swapped this debug print to btn1 since btn2 is now handled above
-  if (incomingCommand.btn1) {
-    Serial.println("Button 1 pressed");
-  }
 }
 
-void handleServoToggle(const RemoteCommandData &commandData) {
-  // --- UPDATED SERVO TOGGLE LOGIC ---
-  // Check if btn2 was just pressed (transition from false to true)
-  if (commandData.btn2 == true && lastBtn2State == false) {
-    servoAt180 = !servoAt180; // Toggle state
-
-    if (servoAt180) {
-      myServo.write(180);
-      Serial.println("Button 2 pressed: Servo toggled to 180 degrees");
-    } else {
-      myServo.write(0);
-      Serial.println("Button 2 pressed: Servo toggled to 0 degrees");
+void handleHammerStrike(const RemoteCommandData &commandData) {
+  if (commandData.btn1 == true && lastBtn1State == false) {
+    if (hammerState == HAMMER_IDLE) {
+      hammerState = HAMMER_STRIKING;
+      lastHammerStepTime = millis();
+      // Serial.println("Button 1 pressed: Hammer strike");
     }
   }
-  // Save current button state for the next packet comparison
-  lastBtn2State = commandData.btn2;
-  // --------------------------------
+  lastBtn1State = commandData.btn1;
+}
+
+void printRemoteCommandData(const char *label, const RemoteCommandData &data) {
+  Serial.print(label);
+  Serial.print(" xVal="); Serial.print(data.xVal);
+  Serial.print(" yVal="); Serial.print(data.yVal);
+  Serial.print(" sw1="); Serial.print(data.sw1);
+  Serial.print(" btn1="); Serial.print(data.btn1);
+  Serial.print(" btn2="); Serial.print(data.btn2);
+  Serial.print(" auto="); Serial.println(data.isAutomatedMode);
 }
 
 bool isSameMac(const uint8_t *a, const uint8_t *b) {
@@ -156,14 +160,14 @@ void addBridgePeerIfNeeded(const uint8_t *mac) {
 
   if (!esp_now_is_peer_exist(bridgeMac)) {
     if (esp_now_add_peer(&bridgePeer) != ESP_OK) {
-      Serial.println("Failed to add automation bridge peer");
+      // Serial.println("Failed to add automation bridge peer");
       hasBridgePeer = false;
       return;
     }
   }
 
   hasBridgePeer = true;
-  Serial.println("Automation bridge peer ready");
+  // Serial.println("Automation bridge peer ready");
 }
 
 bool isManualActive(const RemoteCommandData &commandData) {
@@ -184,6 +188,14 @@ void moveMotor() {
 
   bool manualFresh = (now - lastManualTime) <= MANUAL_TIMEOUT_MS;
   bool autoFresh = (now - lastAutoTime) <= AUTO_TIMEOUT_MS;
+
+  RemoteCommandData activeCommand = { 2048, 2048, false, false, false, false };
+  if (manualFresh && isManualActive(manualData)) {
+    activeCommand = manualData;
+  } else if (autoFresh) {
+    activeCommand = autoData;
+  }
+  handleHammerStrike(activeCommand);
 
   if (manualFresh && isManualActive(manualData)) {
     moveMotor(manualData);
@@ -287,22 +299,22 @@ void setup() {
   MPUWire.begin(MPU_SDA_PIN, MPU_SCL_PIN, 400000);
 
   byte mpuStatus = mpu.begin();
-  Serial.print("MPU Status: ");
-  Serial.println(mpuStatus);
+  // Serial.print("MPU Status: ");
+  // Serial.println(mpuStatus);
   if (mpuStatus == 0) {
     mpuReady = true;
-    Serial.println("Do not move Tank Bot. Calibrating MPU...");
+    // Serial.println("Do not move Tank Bot. Calibrating MPU...");
     delay(2000);
     mpu.calcOffsets();
-    Serial.println("MPU calibration done");
+    // Serial.println("MPU calibration done");
   } else {
-    Serial.println("MPU6050 not found. m1 will stay at 0.");
+    // Serial.println("MPU6050 not found. m1 will stay at 0.");
   }
 
   WiFi.mode(WIFI_STA);
 
   if (esp_now_init() != ESP_OK) {
-    Serial.println("Error initializing ESP-NOW");
+    // Serial.println("Error initializing ESP-NOW");
     return;
   }
 
@@ -313,16 +325,16 @@ void setup() {
   peerInfo.encrypt = false;
 
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Failed to add peer");
+    // Serial.println("Failed to add peer");
     return;
   }
 
   memcpy(peerInfo.peer_addr, battleGroundMac, 6);
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Failed to add BattleGround peer");
+    // Serial.println("Failed to add BattleGround peer");
     return;
   }
-  Serial.println("BattleGround peer added");
+  // Serial.println("BattleGround peer added");
 
   esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
 }
@@ -345,12 +357,34 @@ void loop() {
     isFrozen = true;
     freezeStartTime = now;
     motorStop();
-    Serial.println("Tank freeze activated by Hall sensor");
+    // Serial.println("Tank freeze activated by Hall sensor");
   }
 
   if (isFrozen && (now - freezeStartTime >= FREEZE_DURATION)) {
     isFrozen = false;
-    Serial.println("Tank freeze ended");
+    // Serial.println("Tank freeze ended");
+  }
+
+  if (hammerState != HAMMER_IDLE) {
+    if (now - lastHammerStepTime >= HAMMER_STEP_DELAY) {
+      lastHammerStepTime = now;
+
+      if (hammerState == HAMMER_STRIKING) {
+        currentHammerAngle += HAMMER_STEP_SIZE;
+        if (currentHammerAngle >= 120) {
+          currentHammerAngle = 120;
+          hammerState = HAMMER_RETURNING;
+        }
+      } else if (hammerState == HAMMER_RETURNING) {
+        currentHammerAngle -= HAMMER_STEP_SIZE;
+        if (currentHammerAngle <= 0) {
+          currentHammerAngle = 0;
+          hammerState = HAMMER_IDLE;
+          // Serial.println("Hammer returned to rest");
+        }
+      }
+      myServo.write(currentHammerAngle);
+    }
   }
 
   moveMotor();
@@ -361,18 +395,21 @@ void loop() {
 
     sendTelemetry();
 
-    // Debug prints
-    Serial.println("-------------------------------------------------");
-    Serial.print("Manual: X="); Serial.print(manualData.xVal);
-    Serial.print(" Y="); Serial.print(manualData.yVal);
-    Serial.print(" | Auto: X="); Serial.print(autoData.xVal);
-    Serial.print(" Y="); Serial.println(autoData.yVal);
+    printRemoteCommandData("Manual: ", manualData);
+    printRemoteCommandData("Auto:   ", autoData);
 
-    Serial.print("Hall: "); Serial.print(sensorData.hallValue);
-    Serial.print(" | Laser: "); Serial.print(sensorData.laserValue);
-    Serial.print(" | IR1: "); Serial.print(sensorData.ir1Value);
-    Serial.print(" | IR2: "); Serial.print(sensorData.ir2Value);
-    Serial.print(" | m1: "); Serial.println(sensorData.m1);
+    // Debug prints
+    // Serial.println("-------------------------------------------------");
+    // Serial.print("Manual: X="); Serial.print(manualData.xVal);
+    // Serial.print(" Y="); Serial.print(manualData.yVal);
+    // Serial.print(" | Auto: X="); Serial.print(autoData.xVal);
+    // Serial.print(" Y="); Serial.println(autoData.yVal);
+
+    // Serial.print("Hall: "); Serial.print(sensorData.hallValue);
+    // Serial.print(" | Laser: "); Serial.print(sensorData.laserValue);
+    // Serial.print(" | IR1: "); Serial.print(sensorData.ir1Value);
+    // Serial.print(" | IR2: "); Serial.print(sensorData.ir2Value);
+    // Serial.print(" | m1: "); Serial.println(sensorData.m1);
   }
 }
 

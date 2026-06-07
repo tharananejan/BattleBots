@@ -14,6 +14,12 @@
 //servo
   Servo servoX;  // Controls X-axisu
   Servo servoY;  // Controls Y-axis
+  
+  // Servo state variables for incremental movement
+  float currentAngleX = 90.0;
+  float currentAngleY = 45.0;
+  int lastWrittenX = 90;
+  int lastWrittenY = 45;
 
 // Pin setup
   int servoPinY = 12;
@@ -29,7 +35,7 @@
   Adafruit_HTU21DF htu = Adafruit_HTU21DF();
 
 // Humidity damage threshold (%)
-  const float HUMIDITY_DAMAGE_THRESHOLD = 93.0;
+  const float HUMIDITY_DAMAGE_THRESHOLD = 105.0;
 
 //timers
   unsigned long timer = 0;
@@ -69,7 +75,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
     memcpy(&joy_one_value, incomingData, sizeof(joy_one_value));
     //move motor
     moveMotor();
-    moveServo();
+    // Move servo is now handled in the main loop for smooth time-based updates
     // Serial.print("VALUES INCOMING: ");
     // Serial.print(joy_one_value.xVal);
     // Serial.print(" ");
@@ -283,6 +289,10 @@ void loop() {
   }
 
 // Move servos
+  if ((millis() - timer2) > 30) { // Update servo position every 30ms
+    moveServo();
+    timer2 = millis();
+  }
 
   //Move Motors 
   //Laser ON
@@ -372,25 +382,51 @@ void loop() {
 //move servo function 
 
   void moveServo(){
+    // Deadzone constants
+    const int centerVal = 2048; // Assuming 12-bit ADC (0-4095)
+    const int deadzone = 300;   // Ignore values between 1748 and 2348
 
-    int angleX = map(joy_one_value.xVal, 0, 4095, 45, 135);//0,100,0,10
-    int angleY = map(joy_one_value.yVal, 0, 4095, 0, 90);
+    // Speed constants
+    const float minSpeed = 0.5; // Minimum degrees per tick to avoid vibration
+    const float maxSpeed = 2.0; // Maximum degrees per tick
 
-    // servoY.write(90-angleY);
-    // servoX.write(180-angleX);
-    if(angleY>70||angleY<20){
-      servoY.write(90-angleY);
+    float incrementX = 0.0;
+    float incrementY = 0.0;
+
+    // Calculate X increment
+    if (joy_one_value.xVal > (centerVal + deadzone)) {
+      // Map joystick value to speed (inverted if necessary based on physical setup)
+      incrementX = -1.0 * (minSpeed + ((float)(joy_one_value.xVal - (centerVal + deadzone)) / (4095 - (centerVal + deadzone))) * (maxSpeed - minSpeed));
+    } else if (joy_one_value.xVal < (centerVal - deadzone)) {
+      incrementX = minSpeed + ((float)((centerVal - deadzone) - joy_one_value.xVal) / (centerVal - deadzone)) * (maxSpeed - minSpeed);
     }
-    else{
-      servoY.write(45);
-      if(angleX>130||angleX<80){
-        servoX.write(180-angleX);
-      }
-      else{
-        servoX.write(90);
-      }
+
+    // Calculate Y increment
+    if (joy_one_value.yVal > (centerVal + deadzone)) {
+      incrementY = -1.0 * (minSpeed + ((float)(joy_one_value.yVal - (centerVal + deadzone)) / (4095 - (centerVal + deadzone))) * (maxSpeed - minSpeed));
+    } else if (joy_one_value.yVal < (centerVal - deadzone)) {
+      incrementY = minSpeed + ((float)((centerVal - deadzone) - joy_one_value.yVal) / (centerVal - deadzone)) * (maxSpeed - minSpeed);
     }
-      
-    timer2 = millis();
-  
+
+    // Apply increments
+    currentAngleX += incrementX;
+    currentAngleY += incrementY;
+
+    // Constrain to physical limits
+    currentAngleX = constrain(currentAngleX, 45.0, 135.0);
+    currentAngleY = constrain(currentAngleY, 0.0, 90.0);
+
+    // Write to servos only if integer value changes (vibration mitigation)
+    int newWrittenX = (int)currentAngleX;
+    int newWrittenY = (int)currentAngleY;
+
+    if (newWrittenX != lastWrittenX) {
+      servoX.write(newWrittenX);
+      lastWrittenX = newWrittenX;
+    }
+
+    if (newWrittenY != lastWrittenY) {
+      servoY.write(newWrittenY);
+      lastWrittenY = newWrittenY;
+    }
   }
