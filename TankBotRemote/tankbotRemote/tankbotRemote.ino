@@ -65,6 +65,10 @@ typedef struct {
 } GlobalStateData;
 
 typedef struct {
+  bool isAutomatedMode;
+} ModeControlData;
+
+typedef struct {
   int x1;
   int y1;
   bool sw1;
@@ -128,6 +132,18 @@ void OnDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
     }
     currentHealth = state.tankHealth;
     enemyHealth = state.rangeHealth;
+    return;
+  }
+
+  if (len == sizeof(ModeControlData) && memcmp(mac, battleGroundMac, 6) == 0) {
+    ModeControlData mode;
+    memcpy(&mode, incomingData, sizeof(mode));
+    isAutomatedMode = mode.isAutomatedMode;
+    if (!isAutomatedMode) {
+      manualDisplayUntil = millis() + MANUAL_LABEL_MS;
+    }
+    Serial.println(isAutomatedMode ? "Mode set from BattleGround: Automated"
+                                 : "Mode set from BattleGround: Manual");
     return;
   }
 

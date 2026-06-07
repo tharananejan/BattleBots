@@ -12,11 +12,19 @@ import websockets
 
 SERIAL_PORT = "COM14"
 BAUD_RATE = 115200
-CAMERA_INDEX = 1
+CAMERA_INDEX =0
 FRAME_SIZE = 480
 MIN_CONTOUR_AREA = 400
-TURN_DEADBAND_DEGREES = 20
+
+# MPU pursuit tuning
+REACH_MARGIN_PX = 10
+TURN_DEADBAND_DEG = 18
 FORWARD_MAX_ERROR_DEGREES = 90
+ATTACK_COOLDOWN_S = 1.5
+MPU_SIGN = 1  # flip to -1 if MPU rotation direction is inverted
+DEBUG_IGNORE_DEATH = False  # set True in debug to keep chasing after a bot dies
+# Drive char used to advance toward red; change to b"s" ONLY if w drives backward.
+APPROACH_DRIVE = b"s"
 
 WS_HOST = "127.0.0.1"
 WS_PORT = 8765
@@ -29,6 +37,8 @@ RELAY_LINE_TO_POWER = {
 }
 
 outbound_queue: queue.Queue[str | None] = queue.Queue()
+inbound_queue: queue.Queue[str] = queue.Queue()
+serial_buffer = ""
 
 
 def ws_broadcast(payload: dict) -> None:
@@ -60,7 +70,8 @@ async def _ws_server(clients: set) -> None:
         clients.add(websocket)
         print("WebSocket client connected")
         try:
-            await websocket.wait_closed()
+            async for message in websocket:
+                inbound_queue.put(message)
         finally:
             clients.discard(websocket)
             print("WebSocket client disconnected")
@@ -93,7 +104,16 @@ def open_serial():
         return None
 
 
-def process_serial_line(line: str, current_heading: float) -> float:
+def send_serial_json(connection, payload: dict) -> None:
+    if connection is None:
+        return
+    try:
+        connection.write((json.dumps(payload) + "\n").encode())
+    except Exception as error:
+        print(f"Serial write error: {error}")
+
+
+def process_serial_line(line: str, current_heading: float, state: dict) -> float:
     """Parse ESP serial; broadcast telemetry and relay events. Returns updated heading."""
     if not line:
         return current_heading
@@ -122,21 +142,41 @@ def process_serial_line(line: str, current_heading: float) -> float:
     }
     if "rangeHealth" in data:
         telemetry["rangeHealth"] = data["rangeHealth"]
+        state["rangeHealth"] = data["rangeHealth"]
     if "tankHealth" in data:
         telemetry["tankHealth"] = data["tankHealth"]
+        state["tankHealth"] = data["tankHealth"]
+    if "debugDamage" in data:
+        telemetry["debugDamage"] = data["debugDamage"]
+
+    if "isAutomatedMode" in data:
+        telemetry["isAutomatedMode"] = data["isAutomatedMode"]
+        state["isAutomatedMode"] = data["isAutomatedMode"]
+        
     ws_broadcast(telemetry)
     print("ESP telemetry:", telemetry)
     return heading
 
 
-def drain_serial(connection, current_heading: float) -> float:
+def drain_serial(connection, current_heading: float, state: dict) -> float:
+    global serial_buffer
     if connection is None or not connection.in_waiting:
         return current_heading
 
+    try:
+        new_data = connection.read(connection.in_waiting).decode(errors="ignore")
+        serial_buffer += new_data
+    except Exception as e:
+        print(f"Serial read error: {e}")
+        return current_heading
+
     heading = current_heading
-    while connection.in_waiting:
-        line = connection.readline().decode(errors="ignore").strip()
-        heading = process_serial_line(line, heading)
+    while "\n" in serial_buffer:
+        line, serial_buffer = serial_buffer.split("\n", 1)
+        line = line.strip()
+        if line:
+            heading = process_serial_line(line, heading, state)
+
     return heading
 
 
@@ -229,18 +269,48 @@ def main():
     print(f"Camera: index={used_index}, backend={used_backend}")
     print(f"Actual resolution: {width}x{height}")
 
-    heading = 0
+    heading = 0.0
+    angle_offset = 0.0
+    needs_calibration = False
+    last_attack_ts = 0.0
+
+    state = {
+        "isAutomatedMode": False,
+        "tankHealth": 100,
+        "rangeHealth": 100,
+        "match_over": False,
+    }
 
     try:
         while True:
-            heading = drain_serial(ser, heading)
+            # Process inbound websocket messages
+            while not inbound_queue.empty():
+                try:
+                    msg_str = inbound_queue.get_nowait()
+                    msg = json.loads(msg_str)
+                    if msg.get("type") == "START_BATTLE":
+                        print("Received START_BATTLE signal. Calibrating MPU to camera.")
+                        needs_calibration = True
+                        state["match_over"] = False
+                    elif msg.get("type") == "DEBUG_DAMAGE":
+                        print("Received DEBUG_DAMAGE signal:", msg)
+                        send_serial_json(ser, msg)
+                    elif msg.get("type") == "SET_MODE":
+                        print("Received SET_MODE signal:", msg)
+                        send_serial_json(ser, msg)
+                except Exception as e:
+                    print(f"Error parsing inbound message: {e}")
+
+            heading = drain_serial(ser, heading, state)
+
+            if state.get("tankHealth", 100) <= 0 or state.get("rangeHealth", 100) <= 0:
+                state["match_over"] = True
 
             ret, frame = cap.read()
             if not ret or frame is None:
                 print("Camera read failed; stopping automation.")
                 break
 
-            frame = cv.flip(frame, 1)
             hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
 
             lower_blue = np.array([100, 150, 50])
@@ -289,35 +359,63 @@ def main():
 
             cmd_turn = b"x"
             cmd_drive = b"x"
+            automation_blocked = state.get("match_over") and not DEBUG_IGNORE_DEATH
 
-            if blue_marker is not None and red_marker is not None and heading is not None:
-                bx, by, _ = blue_marker
-                rx, ry, _ = red_marker
+            if state.get("isAutomatedMode") and not automation_blocked:
+                if blue_marker is not None and red_marker is not None:
+                    bx, by, br = blue_marker
+                    rx, ry, rr = red_marker
+                    now = time.time()
 
-                target_angle = (math.degrees(math.atan2(by - ry, rx - bx)) - 90) % 360
-                robot_angle = heading % 360
-                error = target_angle - robot_angle
+                    dist = math.hypot(rx - bx, ry - by)
+                    reach_dist = br + rr + REACH_MARGIN_PX
 
-                if error > 180:
-                    error -= 360
-                if error < -180:
-                    error += 360
+                    if dist <= reach_dist:
+                        if now - last_attack_ts >= ATTACK_COOLDOWN_S:
+                            cmd_drive = b"h"
+                            last_attack_ts = now
+                            print(f"Reach target (dist={dist:.1f}); hammer strike")
+                    else:
+                        camera_angle = (
+                            math.degrees(math.atan2(by - ry, rx - bx)) - 90
+                        ) % 360
 
-                print("Target:", target_angle, "Robot:", robot_angle, "Error:", error)
+                        if needs_calibration:
+                            angle_offset = camera_angle - (heading * MPU_SIGN)
+                            needs_calibration = False
+                            print(
+                                f"Calibrated! Camera: {camera_angle:.1f}, "
+                                f"MPU: {heading:.1f}, Offset: {angle_offset:.1f}"
+                            )
 
-                if error > TURN_DEADBAND_DEGREES:
-                    cmd_turn = b"a"
-                elif error < -TURN_DEADBAND_DEGREES:
-                    cmd_turn = b"d"
+                        robot_angle = ((heading * MPU_SIGN) + angle_offset) % 360
+                        error = camera_angle - robot_angle
+                        if error > 180:
+                            error -= 360
+                        if error < -180:
+                            error += 360
 
-                if abs(error) <= FORWARD_MAX_ERROR_DEGREES:
-                    cmd_drive = b"w"
+                        print(
+                            f"Dist: {dist:.1f}, Target: {camera_angle:.1f}, "
+                            f"Robot: {robot_angle:.1f}, Error: {error:.1f}"
+                        )
 
-            if ser is not None:
+                        if error > TURN_DEADBAND_DEG:
+                            cmd_turn = b"a"
+                        elif error < -TURN_DEADBAND_DEG:
+                            cmd_turn = b"d"
+
+                        if abs(error) <= FORWARD_MAX_ERROR_DEGREES:
+                            cmd_drive = APPROACH_DRIVE
+                else:
+                    print("Marker lost; sending stop")
+            elif state.get("isAutomatedMode") and automation_blocked:
+                print("Match over; automation stopped until START_BATTLE")
+
+            if ser is not None and state.get("isAutomatedMode"):
                 ser.write(cmd_turn)
                 ser.write(cmd_drive)
-
-            print(f"Commands sent: cmd_turn={cmd_turn}, cmd_drive={cmd_drive}")
+                print(f"Commands sent: cmd_turn={cmd_turn}, cmd_drive={cmd_drive}")
 
             cv.imshow("Tank Bot Automation", frame)
 

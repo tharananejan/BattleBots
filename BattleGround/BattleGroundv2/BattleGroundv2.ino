@@ -48,6 +48,10 @@ typedef struct {
   bool isAutomatedMode;
 } RemoteCommandData;
 
+typedef struct {
+  bool isAutomatedMode;
+} ModeControlData;
+
 // --- Relay pins ---
 int fanout = 18;
 int lasorout = 7;
@@ -107,6 +111,64 @@ RemoteCommandData autoCommand = {
 bool automationActive = false;
 unsigned long lastAutomationTime = 0;
 
+// Debug: disable individual HP damage paths (all enabled by default)
+struct DamageDebugFlags {
+  bool rangePiezoIr = true;
+  bool rangeHumidity = true;
+  bool tankLaser = true;
+  bool tankIr = true;
+} damageDebug;
+
+bool parseJsonBool(const String &json, const char *key, bool &outVal) {
+  String search = String("\"") + key + "\":";
+  int idx = json.indexOf(search);
+  if (idx < 0) return false;
+  int valStart = idx + search.length();
+  while (valStart < (int)json.length() && json[valStart] == ' ') valStart++;
+  if (json.substring(valStart, valStart + 4) == "true") {
+    outVal = true;
+    return true;
+  }
+  if (json.substring(valStart, valStart + 5) == "false") {
+    outVal = false;
+    return true;
+  }
+  return false;
+}
+
+void processSerialJsonLine(const String &line) {
+  if (line.indexOf("DEBUG_DAMAGE") >= 0) {
+    bool v;
+    if (parseJsonBool(line, "rangePiezoIr", v)) damageDebug.rangePiezoIr = v;
+    if (parseJsonBool(line, "rangeHumidity", v)) damageDebug.rangeHumidity = v;
+    if (parseJsonBool(line, "tankLaser", v)) damageDebug.tankLaser = v;
+    if (parseJsonBool(line, "tankIr", v)) damageDebug.tankIr = v;
+    Serial.println("Debug damage flags updated");
+    return;
+  }
+
+  if (line.indexOf("SET_MODE") >= 0) {
+    bool v;
+    if (parseJsonBool(line, "isAutomatedMode", v)) {
+      tankBotAutomatedMode = v;
+      ModeControlData mode = {tankBotAutomatedMode};
+      esp_now_send(tankBotRemoteMac, (uint8_t *)&mode, sizeof(mode));
+      Serial.println(tankBotAutomatedMode ? "SET_MODE: Automated" : "SET_MODE: Manual");
+    }
+    return;
+  }
+}
+
+void drainSerialDebugCommands() {
+  while (Serial.available() > 0 && Serial.peek() == '{') {
+    String line = Serial.readStringUntil('\n');
+    line.trim();
+    if (line.length() > 0) {
+      processSerialJsonLine(line);
+    }
+  }
+}
+
 bool isSameMac(const uint8_t *a, const uint8_t *b) {
   return memcmp(a, b, 6) == 0;
 }
@@ -144,7 +206,7 @@ void applyRangeDamage(const RangeBotTelemetry &t) {
   if (rangeBotHealth == 0) return;
 
   bool hit = (t.piezo > PIEZO_HIT_THRESHOLD || t.ir1 || t.ir2);
-  if (hit && (millis() - lastRangeDamageMs >= DAMAGE_DEBOUNCE_MS)) {
+  if (damageDebug.rangePiezoIr && hit && (millis() - lastRangeDamageMs >= DAMAGE_DEBOUNCE_MS)) {
     lastRangeDamageMs = millis();
     if (rangeBotHealth > RANGE_DAMAGE) {
       rangeBotHealth -= RANGE_DAMAGE;
@@ -155,7 +217,7 @@ void applyRangeDamage(const RangeBotTelemetry &t) {
     Serial.println(rangeBotHealth);
   }
 
-  if (t.humidityHit && (millis() - lastRangeHumidityDamageMs >= DAMAGE_DEBOUNCE_MS)) {
+  if (damageDebug.rangeHumidity && t.humidityHit && (millis() - lastRangeHumidityDamageMs >= DAMAGE_DEBOUNCE_MS)) {
     lastRangeHumidityDamageMs = millis();
     if (rangeBotHealth > RANGE_HUMIDITY_DAMAGE) {
       rangeBotHealth -= RANGE_HUMIDITY_DAMAGE;
@@ -170,7 +232,7 @@ void applyRangeDamage(const RangeBotTelemetry &t) {
 void applyTankDamage(const TankBotTelemetry &t) {
   if (tankBotHealth == 0) return;
 
-  if (!t.laserValue && (millis() - lastTankLaserDamageMs >= DAMAGE_DEBOUNCE_MS)) {
+  if (damageDebug.tankLaser && !t.laserValue && (millis() - lastTankLaserDamageMs >= DAMAGE_DEBOUNCE_MS)) {
     lastTankLaserDamageMs = millis();
     if (tankBotHealth > TANK_LASER_DAMAGE) {
       tankBotHealth -= TANK_LASER_DAMAGE;
@@ -181,7 +243,7 @@ void applyTankDamage(const TankBotTelemetry &t) {
     Serial.println(tankBotHealth);
   }
 
-  if ((t.ir1Value || t.ir2Value) && (millis() - lastTankIrDamageMs >= DAMAGE_DEBOUNCE_MS)) {
+  if (damageDebug.tankIr && (t.ir1Value || t.ir2Value) && (millis() - lastTankIrDamageMs >= DAMAGE_DEBOUNCE_MS)) {
     lastTankIrDamageMs = millis();
     if (tankBotHealth > TANK_IR_DAMAGE) {
       tankBotHealth -= TANK_IR_DAMAGE;
@@ -208,6 +270,18 @@ void printCombinedStateJson() {
   Serial.print(rangeBotHealth);
   Serial.print(",\"tankHealth\":");
   Serial.print(tankBotHealth);
+  Serial.print(",\"isAutomatedMode\":");
+  Serial.print(tankBotAutomatedMode ? "true" : "false");
+  Serial.print(",\"debugDamage\":{");
+  Serial.print("\"rangePiezoIr\":");
+  Serial.print(damageDebug.rangePiezoIr ? "true" : "false");
+  Serial.print(",\"rangeHumidity\":");
+  Serial.print(damageDebug.rangeHumidity ? "true" : "false");
+  Serial.print(",\"tankLaser\":");
+  Serial.print(damageDebug.tankLaser ? "true" : "false");
+  Serial.print(",\"tankIr\":");
+  Serial.print(damageDebug.tankIr ? "true" : "false");
+  Serial.print("}");
   Serial.println("}");
 }
 
@@ -256,6 +330,20 @@ bool isValidMotionChar(char cmd) {
 
 void applySerialCommandPair(char turnCmd, char driveCmd) {
   if (tankBotHealth == 0) return;
+
+  if (driveCmd == 'h') {
+    autoCommand.xVal = JOYSTICK_CENTER;
+    autoCommand.yVal = JOYSTICK_CENTER;
+    autoCommand.sw1 = false;
+    autoCommand.btn1 = true;
+    autoCommand.btn2 = false;
+    autoCommand.isAutomatedMode = true;
+    sendAutomationToTankBot();
+    automationActive = true;
+    lastAutomationTime = millis();
+    return;
+  }
+
   if (!isValidMotionChar(turnCmd) || !isValidMotionChar(driveCmd)) {
     return;
   }
@@ -352,9 +440,10 @@ void setup() {
 
 void loop() {
   checkMatchEnd();
+  drainSerialDebugCommands();
 
   if (tankBotAutomatedMode && tankBotHealth > 0) {
-    while (Serial.available() >= 2) {
+    while (Serial.available() >= 2 && Serial.peek() != '{') {
       char turnCmd = (char)Serial.read();
       char driveCmd = (char)Serial.read();
       applySerialCommandPair(turnCmd, driveCmd);
@@ -364,9 +453,10 @@ void loop() {
       stopTankBotAutomation();
     }
   } else {
-    while (Serial.available() > 0) {
+    while (Serial.available() > 0 && Serial.peek() != '{') {
       Serial.read();
     }
+    drainSerialDebugCommands();
     if (automationActive) {
       stopTankBotAutomation();
     }

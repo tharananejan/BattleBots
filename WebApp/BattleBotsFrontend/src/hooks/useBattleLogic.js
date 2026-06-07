@@ -5,6 +5,7 @@ import {
   initRangePowers,
   initTankPowers,
 } from '../constants/botPowers';
+import { DEFAULT_DEBUG_DAMAGE } from '../constants/damageRules';
 
 const INITIAL_POSITIONS = {
   red: { x: 120, y: 240 },
@@ -121,10 +122,13 @@ export const useBattleLogic = (url) => {
   const [tankFrozenUntil, setTankFrozenUntil] = useState(0);
   const [gameState, setGameState] = useState('ACTIVE');
   const [winner, setWinner] = useState(null);
+  const [debugDamage, setDebugDamage] = useState(DEFAULT_DEBUG_DAMAGE);
 
   const isLockedRef = useRef(false);
   const hallFreezeTriggeredRef = useRef(false);
   const FRAME_SIZE = 480;
+
+  const socketRef = useRef(null);
 
   const applyTankFreeze = useCallback((durationMs = TANK_FREEZE_DURATION_MS) => {
     setTankFrozenUntil(Date.now() + durationMs);
@@ -181,6 +185,8 @@ export const useBattleLogic = (url) => {
     if (gameState === 'GAMEOVER') return;
 
     const socket = new WebSocket(url);
+    socketRef.current = socket;
+
     socket.onmessage = (event) => {
       if (isLockedRef.current) return;
 
@@ -201,6 +207,10 @@ export const useBattleLogic = (url) => {
 
         const { power_activated: _ignored, ...telemetryUpdate } = data;
         setTelemetry((prev) => ({ ...prev, ...telemetryUpdate }));
+
+        if (data.debugDamage !== undefined) {
+          setDebugDamage((prev) => ({ ...prev, ...data.debugDamage }));
+        }
 
         if (data.isAutomatedMode !== undefined) {
           setTankMode(data.isAutomatedMode ? 'Auto' : 'Manual');
@@ -249,10 +259,46 @@ export const useBattleLogic = (url) => {
 
     socket.onopen = () =>
       setTelemetry((prev) => ({ ...prev, connected: true }));
-    socket.onclose = () =>
+    socket.onclose = () => {
       setTelemetry((prev) => ({ ...prev, connected: false }));
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
+    };
     return () => socket.close();
   }, [url, gameState, applyTankFreeze]);
+
+  const startBattle = useCallback(() => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'START_BATTLE' }));
+    }
+  }, []);
+
+  const setTankAutomatedMode = useCallback((isAuto) => {
+    setTankMode(isAuto ? 'Auto' : 'Manual');
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({ type: 'SET_MODE', isAutomatedMode: isAuto })
+      );
+    }
+  }, []);
+
+  const sendDebugDamage = useCallback((flags) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'DEBUG_DAMAGE', ...flags }));
+    }
+  }, []);
+
+  const setDebugDamagePath = useCallback(
+    (pathId, enabled) => {
+      setDebugDamage((prev) => {
+        const next = { ...prev, [pathId]: enabled };
+        sendDebugDamage(next);
+        return next;
+      });
+    },
+    [sendDebugDamage]
+  );
 
   useEffect(() => {
     if (gameState === 'GAMEOVER') {
@@ -348,5 +394,9 @@ export const useBattleLogic = (url) => {
     gameState,
     winner,
     isTankFrozen,
+    startBattle,
+    setTankAutomatedMode,
+    debugDamage,
+    setDebugDamagePath,
   };
 };

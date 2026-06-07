@@ -186,6 +186,55 @@ body.dark-theme .header::after {
   transform: translateY(1px);
 }
 
+/* Debug Button */
+.debug-btn {
+  padding: 0.55rem 1.25rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: linear-gradient(90deg, #f59e0b 0%, #ef4444 100%);
+  border: none;
+  cursor: pointer;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.3),
+    0 0 15px rgba(245, 158, 11, 0.2);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.debug-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -50%;
+  width: 200%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+  transform: skewX(-30deg);
+  transition: 0.6s;
+}
+
+.debug-btn:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 15px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(245, 158, 11, 0.3),
+    0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+.debug-btn:hover::before {
+  left: 120%;
+}
+
+.debug-btn:active {
+  transform: translateY(1px);
+}
+
 /* Theme Toggle Button */
 .theme-toggle-btn {
   padding: 0.55rem 1.1rem;
