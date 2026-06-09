@@ -15,6 +15,7 @@ BAUD_RATE = 115200
 CAMERA_INDEX =0
 FRAME_SIZE = 720
 MIN_CONTOUR_AREA = 400
+TRACK_MAX_DIST_PX = 150
 
 # MPU pursuit tuning
 REACH_MARGIN_PX = 10
@@ -180,17 +181,34 @@ def drain_serial(connection, current_heading: float, state: dict) -> float:
     return heading
 
 
-def find_largest_marker(mask):
+def find_tracked_marker(mask, last_pos=None, max_dist=TRACK_MAX_DIST_PX):
     contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
 
-    contour = max(contours, key=cv.contourArea)
-    if cv.contourArea(contour) <= MIN_CONTOUR_AREA:
+    candidates = []
+    for contour in contours:
+        area = cv.contourArea(contour)
+        if area <= MIN_CONTOUR_AREA:
+            continue
+        (x, y), radius = cv.minEnclosingCircle(contour)
+        candidates.append((int(x), int(y), int(radius), area))
+
+    if not candidates:
         return None
 
-    (x, y), radius = cv.minEnclosingCircle(contour)
-    return int(x), int(y), int(radius)
+    if last_pos is not None:
+        lx, ly = last_pos
+        closest = min(
+            candidates,
+            key=lambda marker: math.hypot(marker[0] - lx, marker[1] - ly),
+        )
+        dist = math.hypot(closest[0] - lx, closest[1] - ly)
+        if dist <= max_dist:
+            return closest[:3]
+
+    largest = max(candidates, key=lambda marker: marker[3])
+    return largest[:3]
 
 
 def send_stop(connection):
@@ -311,6 +329,8 @@ def main():
         "tankHealth": 100,
         "rangeHealth": 100,
         "match_over": False,
+        "last_blue_pos": None,
+        "last_red_pos": None,
     }
 
     try:
@@ -324,6 +344,8 @@ def main():
                         print("Received START_BATTLE signal. Calibrating MPU to camera.")
                         needs_calibration = True
                         state["match_over"] = False
+                        state["last_blue_pos"] = None
+                        state["last_red_pos"] = None
                     elif msg.get("type") == "DEBUG_DAMAGE":
                         print("Received DEBUG_DAMAGE signal:", msg)
                         send_serial_json(ser, msg)
@@ -345,20 +367,30 @@ def main():
 
             hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
 
-            lower_blue = np.array([100, 150, 50])
-            upper_blue = np.array([140, 255, 255])
+            lower_blue = np.array([90, 100, 50])
+            upper_blue = np.array([150, 255, 255])
             mask_blue = cv.inRange(hsv, lower_blue, upper_blue)
 
-            lower_red1 = np.array([0, 120, 70])
+            lower_red1 = np.array([0, 100, 50])
             upper_red1 = np.array([10, 255, 255])
-            lower_red2 = np.array([170, 120, 70])
+            lower_red2 = np.array([160, 100, 50])
             upper_red2 = np.array([180, 255, 255])
             mask_red = cv.inRange(hsv, lower_red1, upper_red1) | cv.inRange(
                 hsv, lower_red2, upper_red2
             )
 
-            blue_marker = find_largest_marker(mask_blue)
-            red_marker = find_largest_marker(mask_red)
+            blue_marker = find_tracked_marker(mask_blue, state.get("last_blue_pos"))
+            red_marker = find_tracked_marker(mask_red, state.get("last_red_pos"))
+
+            if blue_marker is not None:
+                state["last_blue_pos"] = (blue_marker[0], blue_marker[1])
+            else:
+                state["last_blue_pos"] = None
+
+            if red_marker is not None:
+                state["last_red_pos"] = (red_marker[0], red_marker[1])
+            else:
+                state["last_red_pos"] = None
             broadcast_positions(blue_marker, red_marker)
 
             if blue_marker is not None:
