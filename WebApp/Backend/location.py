@@ -13,7 +13,7 @@ import websockets
 SERIAL_PORT = "COM14"
 BAUD_RATE = 115200
 CAMERA_INDEX =0
-FRAME_SIZE = 480
+FRAME_SIZE = 720
 MIN_CONTOUR_AREA = 400
 
 # MPU pursuit tuning
@@ -25,7 +25,7 @@ MPU_SIGN = 1  # flip to -1 if MPU rotation direction is inverted
 DEBUG_IGNORE_DEATH = False  # set True in debug to keep chasing after a bot dies
 # Drive char used to advance toward red; change to b"s" ONLY if w drives backward.
 APPROACH_DRIVE = b"s"
-
+url = "http://10.23.8.29:8080/video"
 WS_HOST = "127.0.0.1"
 WS_PORT = 8765
 
@@ -204,6 +204,37 @@ def send_stop(connection):
         pass
 
 
+class RealTimeIPCamera:
+    """Background reader that keeps only the newest IP stream frame."""
+
+    def __init__(self, url, frame_size):
+        self.cap = cv.VideoCapture(url, cv.CAP_ANY)
+        self.cap.set(cv.CAP_PROP_FRAME_WIDTH, frame_size)
+        self.cap.set(cv.CAP_PROP_FRAME_HEIGHT, frame_size)
+        self.cap.set(cv.CAP_PROP_BUFFERSIZE, 1)
+
+        self.ret, self.frame = self.cap.read()
+        self.stopped = False
+
+    def start(self):
+        threading.Thread(target=self.update, daemon=True).start()
+        return self
+
+    def update(self):
+        while not self.stopped:
+            self.ret, self.frame = self.cap.read()
+
+    def read(self):
+        return self.ret, self.frame
+
+    def release(self):
+        self.stopped = True
+        self.cap.release()
+
+    def get(self, prop_id):
+        return self.cap.get(prop_id)
+
+
 def open_camera(preferred_index, frame_size):
     """Try CAP_DSHOW and default backend; indices preferred then 0,1,2. Warm-up reads."""
     backends = [(cv.CAP_DSHOW, "CAP_DSHOW"), (cv.CAP_ANY, "CAP_ANY")]
@@ -255,18 +286,19 @@ def main():
     start_websocket_server()
     ser = open_serial()
 
-    cap, used_index, used_backend = open_camera(CAMERA_INDEX, FRAME_SIZE)
-    if cap is None:
-        tried = [CAMERA_INDEX] + [i for i in (0, 1, 2) if i != CAMERA_INDEX]
-        print(
-            f"Camera failed to open: tried indices {tried} with CAP_DSHOW and CAP_ANY backends."
-        )
+    cap = RealTimeIPCamera(url, FRAME_SIZE)
+    cv.namedWindow("Tank Bot Automation", cv.WINDOW_NORMAL)
+    cv.resizeWindow("Tank Bot Automation", 1000, 720)
+    if not cap.ret:
+        print(f"Camera failed to open: {url}")
         send_stop(ser)
         raise SystemExit(1)
 
+    cap.start()
+
     width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-    print(f"Camera: index={used_index}, backend={used_backend}")
+    print(f"Camera: {url}")
     print(f"Actual resolution: {width}x{height}")
 
     heading = 0.0
