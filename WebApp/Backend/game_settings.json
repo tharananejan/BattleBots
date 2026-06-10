@@ -15,11 +15,11 @@
       "cooldownMs": 10000
     },
     "laser": {
-      "activeMs": 8000,
+      "activeMs": 20000,
       "cooldownMs": 10000
     },
     "humidifier": {
-      "activeMs": 8000,
+      "activeMs": 20000,
       "cooldownMs": 10000
     },
     "hammer": {
@@ -30,5 +30,8 @@
       "activeMs": 3000,
       "cooldownMs": 5000
     }
+  },
+  "camera": {
+    "url": "http://10.11.186.184:8080/video"
   }
 }

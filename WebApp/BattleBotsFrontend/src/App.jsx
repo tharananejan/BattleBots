@@ -5,6 +5,7 @@ import Arena from './components/Arena';
 import LaunchScreen from './components/LaunchScreen';
 import LeaderboardModal from './components/LeaderboardModal';
 import DebugPage from './components/DebugPage';
+import CameraFeedModal from './components/CameraFeedModal';
 import { useBattleLogic } from './hooks/useBattleLogic';
 import './css/App.css';
 
@@ -12,6 +13,7 @@ const App = () => {
   const [isLaunchModalOpen, setIsLaunchModalOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
+  const [isCameraFeedOpen, setIsCameraFeedOpen] = useState(false);
   const [gameConfig, setGameConfig] = useState(null);
   const [theme, setTheme] = useState('dark');
 
@@ -67,6 +69,7 @@ const App = () => {
         sensorData={telemetry}
         onStartClick={() => setIsLaunchModalOpen(true)}
         onLeaderboardClick={() => setIsLeaderboardOpen(true)}
+        onCameraClick={() => setIsCameraFeedOpen(true)}
         onDebugClick={() => setIsDebugOpen(true)}
         theme={theme}
         onToggleTheme={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
@@ -82,6 +85,14 @@ const App = () => {
 
       {isLeaderboardOpen && (
         <LeaderboardModal onClose={() => setIsLeaderboardOpen(false)} />
+      )}
+
+      {isCameraFeedOpen && (
+        <CameraFeedModal
+          gameSettings={gameSettings}
+          updateGameSettings={updateGameSettings}
+          onClose={() => setIsCameraFeedOpen(false)}
+        />
       )}
 
       {isDebugOpen && (

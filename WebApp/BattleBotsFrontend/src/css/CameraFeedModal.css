@@ -1,0 +1,262 @@
+.camera-feed-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 5, 9, 0.85);
+  backdrop-filter: blur(12px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  animation: modalFadeIn 0.3s ease-out;
+  padding: 1.5rem;
+}
+
+body.light-theme .camera-feed-overlay {
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.camera-feed-container {
+  position: relative;
+  width: 100%;
+  max-width: 1200px;
+  max-height: 90vh;
+  background: rgba(13, 17, 26, 0.95);
+  border: 2px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow:
+    0 25px 60px rgba(0, 0, 0, 0.8),
+    inset 0 0 20px rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  padding: 2rem;
+  overflow: hidden;
+  animation: containerScaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: 'Outfit', sans-serif;
+  transition: all 0.3s ease;
+}
+
+body.light-theme .camera-feed-container {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1.5px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.1),
+    inset 0 0 20px rgba(0, 0, 0, 0.01);
+}
+
+.camera-feed-close {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.5rem;
+  background: transparent;
+  border: none;
+  font-size: 2.2rem;
+  font-family: 'Space Grotesk', sans-serif;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.camera-feed-close:hover {
+  color: #ef4444;
+  transform: rotate(90deg);
+}
+
+body.light-theme .camera-feed-close {
+  color: #94a3b8;
+}
+
+.camera-feed-header {
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 1rem;
+}
+
+body.light-theme .camera-feed-header {
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+.camera-feed-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0 0 0.35rem;
+}
+
+.camera-feed-subtitle {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+body.light-theme .camera-feed-subtitle {
+  color: #64748b;
+}
+
+.camera-feed-controls {
+  margin-bottom: 1.25rem;
+}
+
+.camera-feed-label {
+  display: block;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 0.5rem;
+}
+
+.camera-feed-input-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.camera-feed-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.25);
+  color: #e2e8f0;
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.9rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.camera-feed-input:focus {
+  outline: none;
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+body.light-theme .camera-feed-input {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #1e293b;
+}
+
+.camera-feed-update-btn {
+  padding: 0.75rem 1.25rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: linear-gradient(90deg, #8b5cf6 0%, #06b6d4 100%);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+}
+
+.camera-feed-update-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.35);
+}
+
+.camera-feed-update-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.camera-feed-hint {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.camera-feed-hint code {
+  font-family: 'Space Grotesk', monospace;
+  color: #06b6d4;
+}
+
+.camera-feed-status {
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.camera-feed-status--connecting {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.camera-feed-status--connected {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.camera-feed-status--error {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+}
+
+.camera-feed-preview {
+  flex: 1;
+  min-height: 400px;
+  max-height: 75vh;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+body.light-theme .camera-feed-preview {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.camera-feed-stream {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #000;
+}
+
+.camera-feed-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 0.95rem;
+  text-align: center;
+  padding: 2rem;
+  pointer-events: none;
+}
+
+@media (max-width: 700px) {
+  .camera-feed-container {
+    padding: 1.25rem;
+  }
+
+  .camera-feed-input-row {
+    flex-direction: column;
+  }
+
+  .camera-feed-update-btn {
+    width: 100%;
+  }
+}

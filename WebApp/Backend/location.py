@@ -6,6 +6,8 @@ import os
 import queue
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
 
 import cv2 as cv
 import numpy as np
@@ -33,6 +35,7 @@ DEFAULT_GAME_SETTINGS = {
         "hammer": {"activeMs": 1500, "cooldownMs": 1500},
         "dodge": {"activeMs": 3000, "cooldownMs": 5000},
     },
+    "camera": {"url": "http://10.18.205.90:8080/video"},
 }
 
 SERIAL_PORT = "COM14"
@@ -50,9 +53,12 @@ MPU_SIGN = 1  # flip to -1 if MPU rotation direction is inverted
 DEBUG_IGNORE_DEATH = False  # set True in debug to keep chasing after a bot dies
 # Drive char used to advance toward red; change to b"s" ONLY if w drives backward.
 APPROACH_DRIVE = b"s"
-url = "http://10.10.23.166:8080/video"
 WS_HOST = "127.0.0.1"
 WS_PORT = 8765
+CAMERA_PROXY_PORT = 8766
+OPEN_TIMEOUT_MS = 5000
+READ_TIMEOUT_MS = 5000
+CAMERA_OPEN_TIMEOUT_S = 6.0
 
 # BattleGroundv2.ino serial strings when relays energize
 RELAY_LINE_TO_POWER = {
@@ -66,6 +72,8 @@ outbound_queue: queue.Queue[str | None] = queue.Queue()
 inbound_queue: queue.Queue[str] = queue.Queue()
 serial_buffer = ""
 game_settings = copy.deepcopy(DEFAULT_GAME_SETTINGS)
+latest_jpeg_frame: bytes | None = None
+jpeg_lock = threading.Lock()
 
 
 def merge_game_settings(partial: dict | None) -> dict:
@@ -79,7 +87,26 @@ def merge_game_settings(partial: dict | None) -> dict:
         for power_id, values in partial["powers"].items():
             if power_id in merged["powers"] and isinstance(values, dict):
                 merged["powers"][power_id].update(values)
+    if "camera" in partial and isinstance(partial["camera"], dict):
+        merged["camera"].update(partial["camera"])
     return merged
+
+
+def normalize_camera_url(url: str) -> str:
+    normalized = (url or "").strip()
+    if not normalized:
+        return DEFAULT_GAME_SETTINGS["camera"]["url"]
+    if not normalized.startswith(("http://", "https://")):
+        normalized = f"http://{normalized}"
+    parsed = urlparse(normalized)
+    if not parsed.path or parsed.path == "/":
+        normalized = normalized.rstrip("/") + "/video"
+    return normalized
+
+
+def get_camera_url(settings: dict | None = None) -> str:
+    merged = merge_game_settings(settings or game_settings)
+    return normalize_camera_url(merged["camera"]["url"])
 
 
 def load_game_settings() -> dict:
@@ -316,6 +343,62 @@ def find_tracked_marker(mask, last_pos=None, max_dist=TRACK_MAX_DIST_PX):
     return largest[:3]
 
 
+class CameraProxyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/video":
+            self.send_error(404)
+            return
+
+        self.send_response(200)
+        self.send_header(
+            "Content-Type", "multipart/x-mixed-replace; boundary=frame"
+        )
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+        try:
+            while True:
+                with jpeg_lock:
+                    frame = latest_jpeg_frame
+                if frame is not None:
+                    self.wfile.write(b"--frame\r\n")
+                    self.wfile.write(b"Content-Type: image/jpeg\r\n\r\n")
+                    self.wfile.write(frame)
+                    self.wfile.write(b"\r\n")
+                    self.wfile.flush()
+                time.sleep(0.033)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+
+    def log_message(self, format, *args):
+        pass
+
+
+def start_camera_proxy_server() -> None:
+    def run():
+        server = ThreadingHTTPServer(
+            (WS_HOST, CAMERA_PROXY_PORT), CameraProxyHandler
+        )
+        print(
+            f"Camera proxy listening on http://{WS_HOST}:{CAMERA_PROXY_PORT}/video"
+        )
+        server.serve_forever()
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    time.sleep(0.1)
+
+
+def update_proxy_frame(frame) -> None:
+    global latest_jpeg_frame
+    ok, jpeg = cv.imencode(".jpg", frame, [cv.IMWRITE_JPEG_QUALITY, 80])
+    if not ok:
+        return
+    with jpeg_lock:
+        latest_jpeg_frame = jpeg.tobytes()
+
+
 def send_stop(connection):
     if connection is None:
         return
@@ -332,30 +415,81 @@ class RealTimeIPCamera:
 
     def __init__(self, url, frame_size):
         self.cap = cv.VideoCapture(url, cv.CAP_ANY)
+        self.cap.set(cv.CAP_PROP_OPEN_TIMEOUT_MSEC, OPEN_TIMEOUT_MS)
+        self.cap.set(cv.CAP_PROP_READ_TIMEOUT_MSEC, READ_TIMEOUT_MS)
         self.cap.set(cv.CAP_PROP_FRAME_WIDTH, frame_size)
         self.cap.set(cv.CAP_PROP_FRAME_HEIGHT, frame_size)
         self.cap.set(cv.CAP_PROP_BUFFERSIZE, 1)
 
         self.ret, self.frame = self.cap.read()
         self.stopped = False
+        self.thread = None
 
     def start(self):
-        threading.Thread(target=self.update, daemon=True).start()
+        self.thread = threading.Thread(target=self.update, daemon=True)
+        self.thread.start()
         return self
 
     def update(self):
         while not self.stopped:
             self.ret, self.frame = self.cap.read()
+        self.cap.release()
 
     def read(self):
         return self.ret, self.frame
 
     def release(self):
         self.stopped = True
-        self.cap.release()
+        if self.thread is not None and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
 
     def get(self, prop_id):
         return self.cap.get(prop_id)
+
+
+def open_ip_camera(camera_url: str) -> RealTimeIPCamera | None:
+    """Open an IP camera stream; returns None if the URL is unreachable."""
+    camera_url = normalize_camera_url(camera_url)
+    result: dict = {"cap": None, "error": None}
+
+    def _open():
+        try:
+            result["cap"] = RealTimeIPCamera(camera_url, FRAME_SIZE)
+        except Exception as error:
+            result["error"] = error
+
+    thread = threading.Thread(target=_open, daemon=True)
+    thread.start()
+    thread.join(timeout=CAMERA_OPEN_TIMEOUT_S)
+    if thread.is_alive():
+        print(f"Camera open timed out: {camera_url}")
+        return None
+
+    if result["error"] is not None:
+        print(f"Camera open error ({camera_url}): {result['error']}")
+        return None
+
+    cap = result["cap"]
+    if cap is None:
+        return None
+
+    try:
+        if not cap.ret:
+            try:
+                cap.cap.release()
+            except Exception:
+                pass
+            print(f"Camera failed to open: {camera_url}")
+            return None
+        cap.start()
+        width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+        print(f"Camera: {camera_url}")
+        print(f"Actual resolution: {width}x{height}")
+        return cap
+    except Exception as error:
+        print(f"Camera open error ({camera_url}): {error}")
+        return None
 
 
 def open_camera(preferred_index, frame_size):
@@ -409,6 +543,10 @@ def apply_game_settings_update(msg: dict, ser) -> None:
     global game_settings
     incoming = msg.get("settings", msg)
     game_settings = merge_game_settings(incoming)
+    if "camera" in game_settings:
+        game_settings["camera"]["url"] = normalize_camera_url(
+            game_settings["camera"]["url"]
+        )
     save_game_settings(game_settings)
     broadcast_game_settings(game_settings)
     send_serial_json(ser, to_firmware_settings(game_settings))
@@ -417,24 +555,19 @@ def apply_game_settings_update(msg: dict, ser) -> None:
 
 def main():
     load_game_settings()
+    if "camera" in game_settings:
+        game_settings["camera"]["url"] = normalize_camera_url(
+            game_settings["camera"]["url"]
+        )
     start_websocket_server()
+    start_camera_proxy_server()
     ser = open_serial()
     send_serial_json(ser, to_firmware_settings(game_settings))
 
-    cap = RealTimeIPCamera(url, FRAME_SIZE)
+    current_camera_url = get_camera_url()
+    cap = open_ip_camera(current_camera_url)
     cv.namedWindow("Tank Bot Automation", cv.WINDOW_NORMAL)
     cv.resizeWindow("Tank Bot Automation", 1000, 720)
-    if not cap.ret:
-        print(f"Camera failed to open: {url}")
-        send_stop(ser)
-        raise SystemExit(1)
-
-    cap.start()
-
-    width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-    print(f"Camera: {url}")
-    print(f"Actual resolution: {width}x{height}")
 
     heading = 0.0
     angle_offset = 0.0
@@ -497,10 +630,29 @@ def main():
                 state["match_over"] = True
                 state["gameActive"] = False
 
+            new_camera_url = get_camera_url()
+            if new_camera_url != current_camera_url:
+                print(f"Camera URL changed: {current_camera_url} -> {new_camera_url}")
+                if cap is not None:
+                    cap.release()
+                    time.sleep(0.5)
+                current_camera_url = new_camera_url
+                cap = open_ip_camera(current_camera_url)
+
+            if cap is None:
+                cap = open_ip_camera(current_camera_url)
+                time.sleep(1.0)
+                continue
+
             ret, frame = cap.read()
             if not ret or frame is None:
-                print("Camera read failed; stopping automation.")
-                break
+                print("Camera read failed; retrying...")
+                cap.release()
+                cap = None
+                time.sleep(0.1)
+                continue
+
+            update_proxy_frame(frame)
 
             hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
 
@@ -625,7 +777,8 @@ def main():
                 ser.write(cmd_drive)
                 print(f"Commands sent: cmd_turn={cmd_turn}, cmd_drive={cmd_drive}")
 
-            cv.imshow("Tank Bot Automation", frame)
+            if frame is not None:
+                cv.imshow("Tank Bot Automation", frame)
 
             if cv.waitKey(1) & 0xFF == ord("q"):
                 break

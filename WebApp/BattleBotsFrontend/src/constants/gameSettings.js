@@ -18,7 +18,31 @@ export const DEFAULT_GAME_SETTINGS = {
     hammer: { activeMs: 1500, cooldownMs: 1500 },
     dodge: { activeMs: 3000, cooldownMs: 5000 },
   },
+  camera: { url: 'http://10.18.205.90:8080/video' },
 };
+
+export const CAMERA_PROXY_URL = 'http://127.0.0.1:8766/video';
+
+export function normalizeCameraUrl(url) {
+  let normalized = (url || '').trim();
+  if (!normalized) {
+    return DEFAULT_GAME_SETTINGS.camera.url;
+  }
+  if (!/^https?:\/\//i.test(normalized)) {
+    normalized = `http://${normalized}`;
+  }
+  try {
+    const parsed = new URL(normalized);
+    if (!parsed.pathname || parsed.pathname === '/') {
+      normalized = `${normalized.replace(/\/$/, '')}/video`;
+    }
+  } catch {
+    if (!normalized.endsWith('/video')) {
+      normalized = `${normalized.replace(/\/$/, '')}/video`;
+    }
+  }
+  return normalized;
+}
 
 function mergePowerSection(defaults, current, patch) {
   return Object.fromEntries(
@@ -38,12 +62,14 @@ export function mergeGameSettings(partial, base = DEFAULT_GAME_SETTINGS) {
     return {
       damage: { ...base.damage },
       powers: mergePowerSection(base.powers, null, null),
+      camera: { ...base.camera },
     };
   }
 
   return {
     damage: { ...base.damage, ...(partial.damage || {}) },
     powers: mergePowerSection(base.powers, null, partial.powers),
+    camera: { ...base.camera, ...(partial.camera || {}) },
   };
 }
 
@@ -51,6 +77,11 @@ export function patchGameSettings(current, patch) {
   return {
     damage: { ...current.damage, ...(patch.damage || {}) },
     powers: mergePowerSection(DEFAULT_GAME_SETTINGS.powers, current.powers, patch.powers),
+    camera: {
+      ...DEFAULT_GAME_SETTINGS.camera,
+      ...current.camera,
+      ...(patch.camera || {}),
+    },
   };
 }
 

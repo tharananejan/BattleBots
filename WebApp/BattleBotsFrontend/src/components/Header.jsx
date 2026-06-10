@@ -1,7 +1,15 @@
 import React from 'react';
 import '../css/Header.css';
 
-const Header = ({ sensorData, onStartClick, onLeaderboardClick, onDebugClick, theme, onToggleTheme }) => {
+const Header = ({
+  sensorData,
+  onStartClick,
+  onLeaderboardClick,
+  onCameraClick,
+  onDebugClick,
+  theme,
+  onToggleTheme,
+}) => {
   const { d1, m1, ir1, ir2, connected } = sensorData;
 
   return (
@@ -16,6 +24,9 @@ const Header = ({ sensorData, onStartClick, onLeaderboardClick, onDebugClick, th
         </button>
         <button type="button" className="leaderboard-btn" onClick={onLeaderboardClick}>
           LEADERBOARD
+        </button>
+        <button type="button" className="camera-feed-btn" onClick={onCameraClick}>
+          CAMERA FEED
         </button>
         <button type="button" className="debug-btn" onClick={onDebugClick}>
           DEBUG
