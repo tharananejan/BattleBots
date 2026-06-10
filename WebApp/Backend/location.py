@@ -56,7 +56,7 @@ MPU_SIGN = 1  # flip to -1 if MPU rotation direction is inverted
 DEBUG_IGNORE_DEATH = False  # set True in debug to keep chasing after a bot dies
 # Drive char used to advance toward red; change to b"s" ONLY if w drives backward.
 APPROACH_DRIVE = b"s"
-url = "http://10.23.8.29:8080/video"
+url = "http://10.11.186.189:8080/video"
 WS_HOST = "127.0.0.1"
 WS_PORT = 8765
 

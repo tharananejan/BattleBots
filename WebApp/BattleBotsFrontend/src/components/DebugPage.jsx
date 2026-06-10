@@ -15,6 +15,31 @@ import '../css/DebugPage.css';
 
 const MAX_LOG_ENTRIES = 15;
 
+const TABS = [
+  { id: 'tank', label: 'Tank Bot' },
+  { id: 'range', label: 'Range Bot' },
+  { id: 'battleground', label: 'Battleground' },
+];
+
+const SHORT_DAMAGE_LABELS = {
+  rangePiezoIr: 'Piezo / IR',
+  rangeHumidity: 'Humidity',
+  tankLaser: 'Laser',
+  tankIr: 'IR Proximity',
+  piezoHitThreshold: 'Piezo Limit',
+  hallFreezeThreshold: 'Hall Limit',
+  tankFreezeDurationMs: 'Freeze Time',
+};
+
+const SHORT_RELAY_LABELS = {
+  fan: 'Fan',
+  laser: 'Laser',
+  humidifier: 'Humidifier',
+};
+
+const TANK_DAMAGE_KEYS = ['tankLaser', 'tankIr', 'hallFreezeThreshold', 'tankFreezeDurationMs'];
+const RANGE_DAMAGE_KEYS = ['rangePiezoIr', 'rangeHumidity', 'piezoHitThreshold'];
+
 function formatTime(date) {
   return date.toLocaleTimeString([], {
     hour: '2-digit',
@@ -24,27 +49,59 @@ function formatTime(date) {
   });
 }
 
-function formatMs(ms) {
-  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${ms}ms`;
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
-function SettingInput({ label, value, unit, min, max, step, onChange }) {
+function ValueControl({ label, value, unit, min, max, step, accent = 'cyan', onChange }) {
+  const nudge = (delta) => {
+    onChange(clamp(value + delta, min, max));
+  };
+
   return (
-    <label className="debug-setting-field">
-      <span className="debug-setting-label">{label}</span>
-      <div className="debug-setting-input-row">
-        <input
-          type="number"
-          className="debug-setting-input"
-          value={value}
-          min={min}
-          max={max}
-          step={step}
-          onChange={(e) => onChange(Number(e.target.value))}
-        />
-        {unit && <span className="debug-setting-unit">{unit}</span>}
+    <div className={`debug-value-row debug-value-row--${accent}`}>
+      <span className="debug-value-label">{label}</span>
+      <div className="debug-value-actions">
+        <button
+          type="button"
+          className="debug-value-btn"
+          onClick={() => nudge(-step)}
+          disabled={value <= min}
+          aria-label={`Decrease ${label}`}
+        >
+          −
+        </button>
+        <span className="debug-value-display">
+          {value}
+          {unit ? <span className="debug-value-unit">{unit}</span> : null}
+        </span>
+        <button
+          type="button"
+          className="debug-value-btn"
+          onClick={() => nudge(step)}
+          disabled={value >= max}
+          aria-label={`Increase ${label}`}
+        >
+          +
+        </button>
       </div>
+    </div>
+  );
+}
+
+function PillSwitch({ label, checked, onChange }) {
+  return (
+    <label className="debug-pill-switch">
+      <span className="debug-pill-switch-label">{label}</span>
+      <button
+        type="button"
+        role="switch"
+        className={`debug-pill-switch-track ${checked ? 'on' : ''}`}
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+      >
+        <span className="debug-pill-switch-thumb" />
+      </button>
     </label>
   );
 }
@@ -61,20 +118,29 @@ function SensorCard({ sensor, value, connected }) {
   return (
     <div className={`debug-sensor-card ${triggered ? 'triggered' : ''}`}>
       <div className="debug-sensor-card-header">
-        <span className="debug-sensor-key">{sensor.key}</span>
+        <span className="debug-sensor-label">{sensor.label}</span>
         <span className={`debug-sensor-status ${triggered ? 'active' : 'idle'}`}>
-          {triggered ? 'TRIGGERED' : 'IDLE'}
+          {triggered ? 'ON' : 'OFF'}
         </span>
       </div>
-      <h4 className="debug-sensor-label">{sensor.label}</h4>
       <p className="debug-sensor-value">{displayValue}</p>
-      <p className="debug-sensor-desc">{sensor.description}</p>
-      <div className="debug-sensor-meta">
-        <span>{sensor.damageMethod}</span>
-        {sensor.damageAmount > 0 && (
-          <span className="debug-damage-tag">-{sensor.damageAmount} HP</span>
-        )}
+      {sensor.damageAmount > 0 && (
+        <span className="debug-damage-tag">−{sensor.damageAmount} HP</span>
+      )}
+    </div>
+  );
+}
+
+function HealthGauge({ label, hp, accent, frozen }) {
+  return (
+    <div className={`debug-health-gauge debug-health-gauge--${accent}`}>
+      <span className="debug-health-gauge-label">{label}</span>
+      <span className="debug-health-gauge-value">{hp ?? '--'}</span>
+      <span className="debug-health-gauge-unit">HP</span>
+      <div className="debug-health-gauge-bar">
+        <div className="debug-health-gauge-fill" style={{ height: `${hp ?? 0}%` }} />
       </div>
+      {frozen && <span className="debug-freeze-badge">FROZEN</span>}
     </div>
   );
 }
@@ -94,6 +160,7 @@ const DebugPage = ({
 }) => {
   const [damageLog, setDamageLog] = useState([]);
   const [draftSettings, setDraftSettings] = useState(gameSettings);
+  const [activeTab, setActiveTab] = useState('tank');
   const prevHealthRef = useRef({ range: 100, tank: 100 });
 
   useEffect(() => {
@@ -110,6 +177,14 @@ const DebugPage = ({
   const hallThreshold = gameSettings.damage.hallFreezeThreshold;
   const freezeDurationMs = gameSettings.damage.tankFreezeDurationMs;
 
+  const tankDamagePaths = debugDamagePaths.filter((p) => p.botColor === 'blue');
+  const rangeDamagePaths = debugDamagePaths.filter((p) => p.botColor === 'red');
+  const tankPowers = POWER_SETTING_FIELDS.filter((p) => p.color === 'blue');
+  const rangePowers = POWER_SETTING_FIELDS.filter((p) => p.color === 'red');
+
+  const tankDamageFields = DAMAGE_SETTING_FIELDS.filter((f) => TANK_DAMAGE_KEYS.includes(f.key));
+  const rangeDamageFields = DAMAGE_SETTING_FIELDS.filter((f) => RANGE_DAMAGE_KEYS.includes(f.key));
+
   useEffect(() => {
     if (!rangeBot || !tankBot) return;
 
@@ -125,7 +200,7 @@ const DebugPage = ({
       entries.push({
         id: `${Date.now()}-range-${damage}`,
         time: formatTime(new Date()),
-        bot: 'Range Bot',
+        bot: 'Range',
         botColor: 'red',
         damage,
         healthAfter: rangeHp,
@@ -139,7 +214,7 @@ const DebugPage = ({
       entries.push({
         id: `${Date.now()}-tank-${damage}`,
         time: formatTime(new Date()),
-        bot: 'Tank Bot',
+        bot: 'Tank',
         botColor: 'blue',
         damage,
         healthAfter: tankHp,
@@ -193,6 +268,59 @@ const DebugPage = ({
   const settingsDirty =
     JSON.stringify(draftSettings) !== JSON.stringify(gameSettings);
 
+  const renderPowerRow = (power, accent) => (
+    <div key={power.id} className={`debug-power-row debug-power-row--${accent}`}>
+      <div className="debug-power-row-meta">
+        <span className="debug-power-name">{power.label}</span>
+        <button
+          type="button"
+          className={`debug-test-power-btn debug-test-power-btn--${accent}`}
+          onClick={() => activatePowerManually(power.id)}
+          disabled={!testMode}
+        >
+          Test
+        </button>
+      </div>
+      <ValueControl
+        label="Active"
+        value={draftSettings.powers[power.id].activeMs}
+        unit="ms"
+        min={0}
+        max={60000}
+        step={500}
+        accent={accent}
+        onChange={(value) => updatePowerSetting(power.id, 'activeMs', value)}
+      />
+      <ValueControl
+        label="CD"
+        value={draftSettings.powers[power.id].cooldownMs}
+        unit="ms"
+        min={0}
+        max={120000}
+        step={500}
+        accent={accent}
+        onChange={(value) => updatePowerSetting(power.id, 'cooldownMs', value)}
+      />
+    </div>
+  );
+
+  const renderDamageToggle = (path) => {
+    const enabled = debugDamage?.[path.flagKey] ?? true;
+    return (
+      <div key={path.id} className={`debug-toggle-row ${enabled ? 'on' : 'off'}`}>
+        <div className="debug-toggle-row-info">
+          <span className="debug-toggle-row-label">{path.label}</span>
+          <span className="debug-damage-tag">−{path.damageAmount} HP</span>
+        </div>
+        <PillSwitch
+          label={enabled ? 'On' : 'Off'}
+          checked={enabled}
+          onChange={(next) => setDebugDamagePath(path.flagKey, next)}
+        />
+      </div>
+    );
+  };
+
   return (
     <div className="debug-overlay" onClick={onClose}>
       <div className="debug-container" onClick={(e) => e.stopPropagation()}>
@@ -202,286 +330,252 @@ const DebugPage = ({
 
         <header className="debug-header">
           <div>
-            <h2 className="debug-title">Debug & Game Settings</h2>
-            <p className="debug-subtitle">LIVE TELEMETRY, DAMAGE MAPPING & CUSTOMIZATION</p>
+            <h2 className="debug-title">Debug Panel</h2>
+            <p className="debug-subtitle">Live controls & thresholds</p>
           </div>
           <div className={`debug-connection ${connected ? 'online' : 'offline'}`}>
-            {connected ? 'WebSocket Live' : 'WebSocket Offline'}
+            {connected ? 'Live' : 'Offline'}
           </div>
         </header>
 
-        <div className="debug-content">
-          <section className="debug-section">
-            <h3 className="debug-section-title">Game State</h3>
-            <div className="debug-game-state-row">
-              <div className={`debug-game-state-card ${battleStarted ? 'active' : 'idle'}`}>
-                <span className="debug-game-state-label">Battle Started</span>
-                <span className={`debug-game-state-badge ${battleStarted ? 'on' : 'off'}`}>
-                  {battleStarted ? 'YES' : 'NO'}
-                </span>
-              </div>
-              <div className={`debug-game-state-card ${testMode ? 'active' : 'idle'}`}>
-                <span className="debug-game-state-label">Test Mode</span>
-                <span className={`debug-game-state-badge ${testMode ? 'on' : 'off'}`}>
-                  {testMode ? 'ON' : 'OFF'}
-                </span>
-              </div>
-              <div className={`debug-game-state-card ${combatUnlocked ? 'active' : 'locked'}`}>
-                <span className="debug-game-state-label">Combat Unlocked</span>
-                <span className={`debug-game-state-badge ${combatUnlocked ? 'on' : 'off'}`}>
-                  {combatUnlocked ? 'YES' : 'LOCKED'}
-                </span>
-              </div>
-            </div>
-            <div className="debug-test-mode-panel">
-              <div>
-                <h4 className="debug-test-mode-title">Test Mode</h4>
-                <p className="debug-note">
-                  When enabled, damage, relays, powers, and Python automation run even before
-                  Start Battle. Use for hardware testing only.
-                </p>
-              </div>
-              <button
-                type="button"
-                className={`debug-toggle-btn debug-test-mode-btn ${testMode ? 'active' : ''}`}
-                onClick={() => toggleTestMode(!testMode)}
-                aria-pressed={testMode}
-              >
-                {testMode ? 'Disable Test Mode' : 'Enable Test Mode'}
-              </button>
-            </div>
-          </section>
+        <nav className="debug-navbar" aria-label="Debug sections">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`debug-nav-item ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
 
-          <section className="debug-section debug-settings-section">
-            <div className="debug-settings-header">
-              <h3 className="debug-section-title">Game Settings</h3>
-              <div className="debug-settings-actions">
-                <button
-                  type="button"
-                  className="debug-clear-btn"
-                  onClick={resetDraft}
-                  disabled={!settingsDirty}
-                >
-                  Reset
-                </button>
-                <button
-                  type="button"
-                  className="debug-apply-btn"
-                  onClick={applySettings}
-                  disabled={!settingsDirty}
-                >
-                  Apply Settings
-                </button>
-              </div>
-            </div>
-            <p className="debug-note debug-controls-note">
-              Customize damage, power timings, and relay durations. Settings are saved on the Python
-              backend and synced to BattleGround firmware. Editable anytime.
-            </p>
+        <div className="debug-body">
+          {activeTab === 'tank' && (
+            <div className="debug-tab-panel debug-tab-panel--tank">
+              <HealthGauge
+                label="Tank"
+                hp={tankBot?.currentHealth}
+                accent="blue"
+                frozen={tankFrozen}
+              />
 
-            <h4 className="debug-settings-subtitle">Damage & Sensors</h4>
-            <div className="debug-settings-grid">
-              {DAMAGE_SETTING_FIELDS.map((field) => (
-                <SettingInput
-                  key={field.key}
-                  label={field.label}
-                  value={draftSettings.damage[field.key]}
-                  unit={field.unit}
-                  min={field.min}
-                  max={field.max}
-                  step={field.step}
-                  onChange={(value) => updateDamageSetting(field.key, value)}
-                />
-              ))}
-            </div>
-
-            <h4 className="debug-settings-subtitle">Power Timings</h4>
-            <div className="debug-power-settings-grid">
-              {POWER_SETTING_FIELDS.map((power) => (
-                <div key={power.id} className={`debug-power-setting-card ${power.color}`}>
-                  <div className="debug-power-setting-header">
-                    <span className="debug-control-bot">{power.bot}</span>
-                    <span className="debug-power-setting-name">{power.label}</span>
-                  </div>
-                  <SettingInput
-                    label="Active Time"
-                    value={draftSettings.powers[power.id].activeMs}
-                    unit="ms"
-                    min={0}
-                    max={60000}
-                    step={500}
-                    onChange={(value) => updatePowerSetting(power.id, 'activeMs', value)}
-                  />
-                  <SettingInput
-                    label="Cooldown"
-                    value={draftSettings.powers[power.id].cooldownMs}
-                    unit="ms"
-                    min={0}
-                    max={120000}
-                    step={500}
-                    onChange={(value) => updatePowerSetting(power.id, 'cooldownMs', value)}
-                  />
-                  <p className="debug-power-setting-summary">
-                    {formatMs(draftSettings.powers[power.id].activeMs)} active /{' '}
-                    {formatMs(draftSettings.powers[power.id].cooldownMs)} cooldown
+              <section className="debug-card debug-card--sensors">
+                <h3 className="debug-card-title">Sensors</h3>
+                <div className="debug-sensor-grid">
+                  {tankSensorMap.map((sensor) => (
+                    <SensorCard
+                      key={sensor.key}
+                      sensor={sensor}
+                      value={telemetry[sensor.key]}
+                      connected={connected}
+                    />
+                  ))}
+                </div>
+                {hallTriggered && (
+                  <p className="debug-hall-alert">
+                    Hall &lt; {hallThreshold} — freeze {freezeDurationMs / 1000}s
                   </p>
+                )}
+              </section>
+
+              <section className="debug-card debug-card--powers">
+                <h3 className="debug-card-title">Powers</h3>
+                <div className="debug-power-grid">
+                  {tankPowers.map((power) => renderPowerRow(power, 'blue'))}
+                </div>
+              </section>
+
+              <section className="debug-card debug-card--thresholds">
+                <h3 className="debug-card-title">Thresholds</h3>
+                <div className="debug-value-grid">
+                  {tankDamageFields.map((field) => (
+                    <ValueControl
+                      key={field.key}
+                      label={SHORT_DAMAGE_LABELS[field.key] || field.label}
+                      value={draftSettings.damage[field.key]}
+                      unit={field.unit}
+                      min={field.min}
+                      max={field.max}
+                      step={field.step}
+                      accent="blue"
+                      onChange={(value) => updateDamageSetting(field.key, value)}
+                    />
+                  ))}
+                </div>
+              </section>
+
+              <section className="debug-card debug-card--toggles">
+                <h3 className="debug-card-title">Damage Toggles</h3>
+                {tankDamagePaths.map(renderDamageToggle)}
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'range' && (
+            <div className="debug-tab-panel debug-tab-panel--range">
+              <HealthGauge
+                label="Range"
+                hp={rangeBot?.currentHealth}
+                accent="orange"
+              />
+
+              <section className="debug-card debug-card--rules">
+                <h3 className="debug-card-title">Damage Sources</h3>
+                <div className="debug-rules-list">
+                  {rangeDamageSources.map((rule) => (
+                    <div key={rule.id} className="debug-rule-row">
+                      <span className="debug-rule-label">{rule.label}</span>
+                      <span className="debug-damage-tag">−{rule.amount} HP</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="debug-card debug-card--powers">
+                <h3 className="debug-card-title">Powers</h3>
+                <div className="debug-power-grid">
+                  {rangePowers.map((power) => renderPowerRow(power, 'orange'))}
+                </div>
+              </section>
+
+              <section className="debug-card debug-card--thresholds">
+                <h3 className="debug-card-title">Thresholds</h3>
+                <div className="debug-value-grid">
+                  {rangeDamageFields.map((field) => (
+                    <ValueControl
+                      key={field.key}
+                      label={SHORT_DAMAGE_LABELS[field.key] || field.label}
+                      value={draftSettings.damage[field.key]}
+                      unit={field.unit}
+                      min={field.min}
+                      max={field.max}
+                      step={field.step}
+                      accent="orange"
+                      onChange={(value) => updateDamageSetting(field.key, value)}
+                    />
+                  ))}
+                </div>
+              </section>
+
+              <section className="debug-card debug-card--toggles">
+                <h3 className="debug-card-title">Damage Toggles</h3>
+                {rangeDamagePaths.map(renderDamageToggle)}
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'battleground' && (
+            <div className="debug-tab-panel debug-tab-panel--battleground">
+              <section className="debug-card debug-card--state">
+                <h3 className="debug-card-title">Game State</h3>
+                <div className="debug-state-grid">
+                  <div className={`debug-state-pill ${battleStarted ? 'on' : ''}`}>
+                    <span>Battle</span>
+                    <strong>{battleStarted ? 'On' : 'Off'}</strong>
+                  </div>
+                  <div className={`debug-state-pill ${testMode ? 'on' : ''}`}>
+                    <span>Test</span>
+                    <strong>{testMode ? 'On' : 'Off'}</strong>
+                  </div>
+                  <div className={`debug-state-pill ${combatUnlocked ? 'on' : ''}`}>
+                    <span>Combat</span>
+                    <strong>{combatUnlocked ? 'Unlocked' : 'Locked'}</strong>
+                  </div>
+                </div>
+                <div className="debug-test-row">
+                  <span className="debug-test-label">Test mode (pre-battle hardware)</span>
+                  <PillSwitch
+                    label={testMode ? 'On' : 'Off'}
+                    checked={testMode}
+                    onChange={toggleTestMode}
+                  />
+                </div>
+              </section>
+
+              <section className="debug-card debug-card--ground">
+                <h3 className="debug-card-title">Ground Powers</h3>
+                <div className="debug-ground-power-grid">
+                  {RELAY_SETTING_FIELDS.map((field) => (
+                    <div key={field.key} className="debug-ground-power-row">
+                      <div className="debug-ground-power-meta">
+                        <span className="debug-ground-power-name">
+                          {SHORT_RELAY_LABELS[field.key] || field.label}
+                        </span>
+                        <button
+                          type="button"
+                          className="debug-test-power-btn debug-test-power-btn--cyan"
+                          onClick={() => activatePowerManually(field.key)}
+                          disabled={!testMode}
+                        >
+                          Test
+                        </button>
+                      </div>
+                      <ValueControl
+                        label="Active"
+                        value={draftSettings.relayActiveMs[field.key]}
+                        unit={field.unit}
+                        min={field.min}
+                        max={field.max}
+                        step={field.step}
+                        accent="cyan"
+                        onChange={(value) => updateRelaySetting(field.key, value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="debug-settings-actions">
                   <button
                     type="button"
-                    className="debug-test-power-btn"
-                    onClick={() => activatePowerManually(power.id)}
+                    className="debug-clear-btn"
+                    onClick={resetDraft}
+                    disabled={!settingsDirty}
                   >
-                    Test Power
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    className="debug-apply-btn"
+                    onClick={applySettings}
+                    disabled={!settingsDirty}
+                  >
+                    Apply
                   </button>
                 </div>
-              ))}
-            </div>
+              </section>
 
-            <h4 className="debug-settings-subtitle">Relay Active Times (BattleGround)</h4>
-            <div className="debug-settings-grid">
-              {RELAY_SETTING_FIELDS.map((field) => (
-                <SettingInput
-                  key={field.key}
-                  label={field.label}
-                  value={draftSettings.relayActiveMs[field.key]}
-                  unit={field.unit}
-                  min={field.min}
-                  max={field.max}
-                  step={field.step}
-                  onChange={(value) => updateRelaySetting(field.key, value)}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section className="debug-section">
-            <h3 className="debug-section-title">Bot Health</h3>
-            <div className="debug-health-row">
-              <div className="debug-health-card range">
-                <span className="debug-health-label">Range Bot</span>
-                <span className="debug-health-value">{rangeBot?.currentHealth ?? '--'} HP</span>
-              </div>
-              <div className="debug-health-card tank">
-                <span className="debug-health-label">Tank Bot</span>
-                <span className="debug-health-value">{tankBot?.currentHealth ?? '--'} HP</span>
-                {tankFrozen && <span className="debug-freeze-badge">FROZEN</span>}
-              </div>
-            </div>
-          </section>
-
-          <section className="debug-section">
-            <h3 className="debug-section-title">Tank Bot Sensors (from serial telemetry)</h3>
-            <div className="debug-sensor-grid">
-              {tankSensorMap.map((sensor) => (
-                <SensorCard
-                  key={sensor.key}
-                  sensor={sensor}
-                  value={telemetry[sensor.key]}
-                  connected={connected}
-                />
-              ))}
-            </div>
-            {hallTriggered && (
-              <p className="debug-hall-alert">
-                Hall below {hallThreshold} — frontend freeze active ({freezeDurationMs / 1000}s)
-              </p>
-            )}
-          </section>
-
-          <section className="debug-section">
-            <h3 className="debug-section-title">Damage Controls (BattleGround firmware)</h3>
-            <p className="debug-note debug-controls-note">
-              Toggle OFF to disable HP damage for that path on BattleGround — affects remotes and web app.
-            </p>
-            <div className="debug-controls-grid">
-              {debugDamagePaths.map((path) => {
-                const enabled = debugDamage?.[path.flagKey] ?? true;
-                return (
-                  <div
-                    key={path.id}
-                    className={`debug-control-card ${path.botColor} ${enabled ? 'enabled' : 'disabled'}`}
+              <section className="debug-card debug-card--log">
+                <div className="debug-log-header">
+                  <h3 className="debug-card-title">Event Log</h3>
+                  <button
+                    type="button"
+                    className="debug-clear-btn"
+                    onClick={() => setDamageLog([])}
                   >
-                    <div className="debug-control-header">
-                      <span className="debug-control-bot">{path.bot}</span>
-                      <span className={`debug-control-status ${enabled ? 'on' : 'off'}`}>
-                        {enabled ? 'DAMAGE ON' : 'DAMAGE OFF'}
-                      </span>
-                    </div>
-                    <h4 className="debug-control-label">{path.label}</h4>
-                    <p className="debug-control-method">{path.method}()</p>
-                    <div className="debug-control-footer">
-                      <span className="debug-damage-tag">-{path.damageAmount} HP</span>
-                      <button
-                        type="button"
-                        className={`debug-toggle-btn ${enabled ? 'active' : ''}`}
-                        onClick={() => setDebugDamagePath(path.flagKey, !enabled)}
-                        aria-pressed={enabled}
-                      >
-                        {enabled ? 'Disable' : 'Enable'}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="debug-section">
-            <h3 className="debug-section-title">Range Bot Damage Sources (BattleGround firmware)</h3>
-            <div className="debug-rules-grid">
-              {rangeDamageSources.map((rule) => (
-                <div key={rule.id} className="debug-rule-card">
-                  <h4>{rule.label}</h4>
-                  <p className="debug-rule-method">{rule.method}()</p>
-                  <p className="debug-rule-sensors">{rule.sensors}</p>
-                  <span className="debug-damage-tag">-{rule.amount} HP</span>
+                    Clear
+                  </button>
                 </div>
-              ))}
+                <div className="debug-log-list">
+                  {damageLog.length === 0 ? (
+                    <p className="debug-log-empty">No events yet</p>
+                  ) : (
+                    damageLog.map((entry) => (
+                      <div key={entry.id} className={`debug-log-entry ${entry.botColor}`}>
+                        <div className="debug-log-top">
+                          <span className="debug-log-time">{entry.time}</span>
+                          <span className="debug-log-bot">{entry.bot}</span>
+                          <span className="debug-log-damage">−{entry.damage}</span>
+                        </div>
+                        <p className="debug-log-source">{entry.source}</p>
+                        <p className="debug-log-health">{entry.healthAfter} HP left</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
             </div>
-            <p className="debug-note">
-              Range Bot sensor values (piezo, humidityHit) are not streamed to the web app yet.
-              Damage is inferred from HP drops and active powers.
-            </p>
-          </section>
-
-          <section className="debug-section">
-            <div className="debug-log-header">
-              <h3 className="debug-section-title">Damage Event Log</h3>
-              <button
-                type="button"
-                className="debug-clear-btn"
-                onClick={() => setDamageLog([])}
-              >
-                Clear Log
-              </button>
-            </div>
-            <div className="debug-log-list">
-              {damageLog.length === 0 ? (
-                <p className="debug-log-empty">No damage events recorded yet.</p>
-              ) : (
-                damageLog.map((entry) => (
-                  <div key={entry.id} className={`debug-log-entry ${entry.botColor}`}>
-                    <div className="debug-log-top">
-                      <span className="debug-log-time">{entry.time}</span>
-                      <span className="debug-log-bot">{entry.bot}</span>
-                      <span className="debug-log-damage">-{entry.damage} HP</span>
-                    </div>
-                    <p className="debug-log-source">
-                      Source: <strong>{entry.source}</strong>
-                    </p>
-                    <p className="debug-log-method">
-                      Method: <code>{entry.method}()</code>
-                    </p>
-                    {entry.sensors?.length > 0 && (
-                      <p className="debug-log-sensors">
-                        Sensors: {entry.sensors.join(', ')}
-                      </p>
-                    )}
-                    <p className="debug-log-health">Health after: {entry.healthAfter} HP</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
+          )}
         </div>
       </div>
     </div>

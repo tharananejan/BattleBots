@@ -10,14 +10,29 @@
     "tankFreezeDurationMs": 10000
   },
   "powers": {
-    "fan": { "activeMs": 5000, "cooldownMs": 10000 },
-    "laser": { "activeMs": 5000, "cooldownMs": 10000 },
-    "humidifier": { "activeMs": 5000, "cooldownMs": 10000 },
-    "hammer": { "activeMs": 1500, "cooldownMs": 1500 },
-    "dodge": { "activeMs": 3000, "cooldownMs": 5000 }
+    "fan": {
+      "activeMs": 5000,
+      "cooldownMs": 10000
+    },
+    "laser": {
+      "activeMs": 5000,
+      "cooldownMs": 10000
+    },
+    "humidifier": {
+      "activeMs": 5000,
+      "cooldownMs": 10000
+    },
+    "hammer": {
+      "activeMs": 1500,
+      "cooldownMs": 1500
+    },
+    "dodge": {
+      "activeMs": 3000,
+      "cooldownMs": 5000
+    }
   },
   "relayActiveMs": {
-    "fan": 5000,
+    "fan": 5500,
     "laser": 5000,
     "humidifier": 5000
   }
