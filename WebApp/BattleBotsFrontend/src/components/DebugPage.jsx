@@ -9,7 +9,6 @@ import {
 import {
   DAMAGE_SETTING_FIELDS,
   POWER_SETTING_FIELDS,
-  RELAY_SETTING_FIELDS,
 } from '../constants/gameSettings';
 import '../css/DebugPage.css';
 
@@ -29,12 +28,6 @@ const SHORT_DAMAGE_LABELS = {
   piezoHitThreshold: 'Piezo Limit',
   hallFreezeThreshold: 'Hall Limit',
   tankFreezeDurationMs: 'Freeze Time',
-};
-
-const SHORT_RELAY_LABELS = {
-  fan: 'Fan',
-  laser: 'Laser',
-  humidifier: 'Humidifier',
 };
 
 const TANK_DAMAGE_KEYS = ['tankLaser', 'tankIr', 'hallFreezeThreshold', 'tankFreezeDurationMs'];
@@ -161,6 +154,7 @@ const DebugPage = ({
   const [damageLog, setDamageLog] = useState([]);
   const [draftSettings, setDraftSettings] = useState(gameSettings);
   const [activeTab, setActiveTab] = useState('tank');
+  const [isMinimized, setIsMinimized] = useState(false);
   const prevHealthRef = useRef({ range: 100, tank: 100 });
 
   useEffect(() => {
@@ -250,13 +244,6 @@ const DebugPage = ({
     }));
   };
 
-  const updateRelaySetting = (key, value) => {
-    setDraftSettings((prev) => ({
-      ...prev,
-      relayActiveMs: { ...prev.relayActiveMs, [key]: value },
-    }));
-  };
-
   const applySettings = () => {
     updateGameSettings(draftSettings);
   };
@@ -321,20 +308,72 @@ const DebugPage = ({
     );
   };
 
+  if (isMinimized) {
+    return (
+      <div className="debug-overlay minimized">
+        <div className="debug-minimized-bar">
+          <span className="debug-minimized-label">Debug</span>
+          <span className={`debug-minimized-status ${connected ? 'online' : 'offline'}`}>
+            {connected ? 'Live' : 'Offline'}
+          </span>
+          <PillSwitch
+            label={testMode ? 'Test' : 'Off'}
+            checked={testMode}
+            onChange={toggleTestMode}
+          />
+          <button
+            type="button"
+            className="debug-test-power-btn debug-test-power-btn--orange"
+            onClick={() => activatePowerManually('laser')}
+            disabled={!testMode}
+          >
+            Laser
+          </button>
+          <button
+            type="button"
+            className="debug-minimized-restore"
+            onClick={() => setIsMinimized(false)}
+            aria-label="Restore debug panel"
+          >
+            ▢
+          </button>
+          <button
+            type="button"
+            className="debug-minimized-close"
+            onClick={onClose}
+            aria-label="Close debug panel"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="debug-overlay" onClick={onClose}>
       <div className="debug-container" onClick={(e) => e.stopPropagation()}>
-        <button type="button" className="debug-close" onClick={onClose} aria-label="Close debug panel">
-          ×
-        </button>
+        <div className="debug-header-actions">
+          <div className={`debug-connection ${connected ? 'online' : 'offline'}`}>
+            {connected ? 'Live' : 'Offline'}
+          </div>
+          <button
+            type="button"
+            className="debug-minimize"
+            onClick={() => setIsMinimized(true)}
+            aria-label="Minimize debug panel"
+          >
+            −
+          </button>
+          <button type="button" className="debug-close" onClick={onClose} aria-label="Close debug panel">
+            ×
+          </button>
+        </div>
 
         <header className="debug-header">
           <div>
             <h2 className="debug-title">Debug Panel</h2>
             <p className="debug-subtitle">Live controls & thresholds</p>
-          </div>
-          <div className={`debug-connection ${connected ? 'online' : 'offline'}`}>
-            {connected ? 'Live' : 'Offline'}
           </div>
         </header>
 
@@ -496,34 +535,11 @@ const DebugPage = ({
 
               <section className="debug-card debug-card--ground">
                 <h3 className="debug-card-title">Ground Powers</h3>
-                <div className="debug-ground-power-grid">
-                  {RELAY_SETTING_FIELDS.map((field) => (
-                    <div key={field.key} className="debug-ground-power-row">
-                      <div className="debug-ground-power-meta">
-                        <span className="debug-ground-power-name">
-                          {SHORT_RELAY_LABELS[field.key] || field.label}
-                        </span>
-                        <button
-                          type="button"
-                          className="debug-test-power-btn debug-test-power-btn--cyan"
-                          onClick={() => activatePowerManually(field.key)}
-                          disabled={!testMode}
-                        >
-                          Test
-                        </button>
-                      </div>
-                      <ValueControl
-                        label="Active"
-                        value={draftSettings.relayActiveMs[field.key]}
-                        unit={field.unit}
-                        min={field.min}
-                        max={field.max}
-                        step={field.step}
-                        accent="cyan"
-                        onChange={(value) => updateRelaySetting(field.key, value)}
-                      />
-                    </div>
-                  ))}
+                <div className="debug-power-grid">
+                  {['fan', 'laser', 'humidifier'].map(id => {
+                    const power = POWER_SETTING_FIELDS.find(p => p.id === id);
+                    return power ? renderPowerRow(power, 'cyan') : null;
+                  })}
                 </div>
                 <div className="debug-settings-actions">
                   <button

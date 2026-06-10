@@ -33,11 +33,11 @@ const int btn3 = 6;
 const int btn4 = 7; 
 
 // --- RATE LIMITING / DEBOUNCE VARIABLES FOR btn4 ---
-const unsigned long FAN_COOLDOWN = 10000;  // 10 Seconds
-const unsigned long LASER_COOLDOWN = 10000;
+unsigned long FAN_COOLDOWN = 10000;
+unsigned long LASER_COOLDOWN = 10000;
 
-unsigned long lastFanPress = -FAN_COOLDOWN;
-unsigned long lastLaserPress = -LASER_COOLDOWN;
+unsigned long lastFanPress = 0;
+unsigned long lastLaserPress = 0;
 unsigned long timer = 0;
 unsigned long timer2 = 0;
 unsigned long oledTimer = 0;
@@ -77,6 +77,8 @@ PowerValues power;
 typedef struct {
   uint8_t rangeHealth;
   uint8_t tankHealth;
+  uint32_t fanCooldownMs;
+  uint32_t laserCooldownMs;
 } GlobalStateData;
 
 typedef struct {
@@ -122,6 +124,12 @@ void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
     }
     currentHealth = state.rangeHealth;
     enemyHealth = state.tankHealth;
+    if (state.fanCooldownMs > 0) {
+      FAN_COOLDOWN = state.fanCooldownMs;
+    }
+    if (state.laserCooldownMs > 0) {
+      LASER_COOLDOWN = state.laserCooldownMs;
+    }
     return;
   }
 
@@ -207,8 +215,10 @@ void loop() {
 
   unsigned long currentTime = millis();
  
- bool fanReady = (currentTime - lastFanPress >= FAN_COOLDOWN);
-  bool laserReady = (currentTime - lastLaserPress >= LASER_COOLDOWN);
+  bool fanReady =
+    (lastFanPress == 0) || (currentTime - lastFanPress >= FAN_COOLDOWN);
+  bool laserReady =
+    (lastLaserPress == 0) || (currentTime - lastLaserPress >= LASER_COOLDOWN);
 
   // Local variables to decide what to send to Central Device
   int currentFanSignal = 0;

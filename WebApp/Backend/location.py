@@ -33,11 +33,6 @@ DEFAULT_GAME_SETTINGS = {
         "hammer": {"activeMs": 1500, "cooldownMs": 1500},
         "dodge": {"activeMs": 3000, "cooldownMs": 5000},
     },
-    "relayActiveMs": {
-        "fan": 5000,
-        "laser": 5000,
-        "humidifier": 5000,
-    },
 }
 
 SERIAL_PORT = "COM14"
@@ -51,12 +46,11 @@ TRACK_MAX_DIST_PX = 150
 REACH_MARGIN_PX = 10
 TURN_DEADBAND_DEG = 18
 FORWARD_MAX_ERROR_DEGREES = 90
-ATTACK_COOLDOWN_S = 1.5
 MPU_SIGN = 1  # flip to -1 if MPU rotation direction is inverted
 DEBUG_IGNORE_DEATH = False  # set True in debug to keep chasing after a bot dies
 # Drive char used to advance toward red; change to b"s" ONLY if w drives backward.
 APPROACH_DRIVE = b"s"
-url = "http://10.11.186.189:8080/video"
+url = "http://10.10.23.166:8080/video"
 WS_HOST = "127.0.0.1"
 WS_PORT = 8765
 
@@ -81,8 +75,6 @@ def merge_game_settings(partial: dict | None) -> dict:
     merged = copy.deepcopy(DEFAULT_GAME_SETTINGS)
     if "damage" in partial:
         merged["damage"].update(partial["damage"])
-    if "relayActiveMs" in partial:
-        merged["relayActiveMs"].update(partial["relayActiveMs"])
     if "powers" in partial:
         for power_id, values in partial["powers"].items():
             if power_id in merged["powers"] and isinstance(values, dict):
@@ -115,18 +107,25 @@ def save_game_settings(settings: dict) -> None:
 
 
 def to_firmware_settings(settings: dict) -> dict:
+    """Compact keys keep the serial JSON under the ESP32 RX buffer limit (~256 bytes)."""
     merged = merge_game_settings(settings)
+    powers = merged["powers"]
+    damage = merged["damage"]
     return {
         "SETTINGS": True,
-        "rangePiezoIr": merged["damage"]["rangePiezoIr"],
-        "rangeHumidity": merged["damage"]["rangeHumidity"],
-        "tankLaser": merged["damage"]["tankLaser"],
-        "tankIr": merged["damage"]["tankIr"],
-        "piezoHitThreshold": merged["damage"]["piezoHitThreshold"],
-        "damageDebounceMs": merged["damage"]["damageDebounceMs"],
-        "fanRelayActiveMs": merged["relayActiveMs"]["fan"],
-        "laserRelayActiveMs": merged["relayActiveMs"]["laser"],
-        "humidifierRelayActiveMs": merged["relayActiveMs"]["humidifier"],
+        "rPi": damage["rangePiezoIr"],
+        "rHum": damage["rangeHumidity"],
+        "tLas": damage["tankLaser"],
+        "tIr": damage["tankIr"],
+        "pTh": damage["piezoHitThreshold"],
+        "dDb": damage["damageDebounceMs"],
+        "fanM": powers["fan"]["activeMs"],
+        "lasM": powers["laser"]["activeMs"],
+        "humM": powers["humidifier"]["activeMs"],
+        "fanC": powers["fan"]["cooldownMs"],
+        "lasC": powers["laser"]["cooldownMs"],
+        "hmrM": powers["hammer"]["activeMs"],
+        "hmrC": powers["hammer"]["cooldownMs"],
     }
 
 
@@ -208,7 +207,8 @@ def send_serial_json(connection, payload: dict) -> None:
     if connection is None:
         return
     try:
-        connection.write((json.dumps(payload) + "\n").encode())
+        line = json.dumps(payload, separators=(",", ":")) + "\n"
+        connection.write(line.encode())
     except Exception as error:
         print(f"Serial write error: {error}")
 
@@ -576,7 +576,10 @@ def main():
                     reach_dist = br + rr + REACH_MARGIN_PX
 
                     if dist <= reach_dist:
-                        if now - last_attack_ts >= ATTACK_COOLDOWN_S:
+                        hammer_cooldown_s = (
+                            game_settings["powers"]["hammer"]["cooldownMs"] / 1000.0
+                        )
+                        if now - last_attack_ts >= hammer_cooldown_s:
                             cmd_drive = b"h"
                             last_attack_ts = now
                             print(f"Reach target (dist={dist:.1f}); hammer strike")

@@ -62,6 +62,8 @@ const int damage = LED_BUILTIN;
 typedef struct {
   uint8_t rangeHealth;
   uint8_t tankHealth;
+  uint32_t fanCooldownMs;
+  uint32_t laserCooldownMs;
 } GlobalStateData;
 
 typedef struct {

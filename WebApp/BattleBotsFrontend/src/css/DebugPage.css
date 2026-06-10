@@ -42,10 +42,18 @@
   padding: 1.25rem 1.5rem 1rem;
 }
 
-.debug-close {
+.debug-header-actions {
   position: absolute;
   top: 1rem;
   right: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 5;
+}
+
+.debug-minimize,
+.debug-close {
   width: 32px;
   height: 32px;
   border: none;
@@ -54,13 +62,95 @@
   color: var(--dbg-muted);
   font-size: 1.25rem;
   cursor: pointer;
-  z-index: 5;
   line-height: 1;
+  flex-shrink: 0;
 }
 
+.debug-minimize:hover,
 .debug-close:hover {
   color: var(--dbg-text);
   background: var(--dbg-surface-2);
+}
+
+/* Minimized floating bar */
+.debug-overlay.minimized {
+  background: transparent;
+  pointer-events: none;
+  justify-content: flex-end;
+  align-items: flex-end;
+  padding: 0;
+}
+
+.debug-minimized-bar {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--dbg-bg);
+  border-radius: 999px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  pointer-events: auto;
+  z-index: 10000;
+}
+
+.debug-minimized-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--dbg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.debug-minimized-status {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--dbg-surface);
+}
+
+.debug-minimized-status.online {
+  color: var(--dbg-green);
+}
+
+.debug-minimized-status.offline {
+  color: var(--dbg-orange);
+}
+
+.debug-minimized-bar .debug-pill-switch-label {
+  min-width: auto;
+}
+
+.debug-minimized-restore,
+.debug-minimized-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: var(--dbg-surface);
+  color: var(--dbg-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.debug-minimized-restore:hover,
+.debug-minimized-close:hover {
+  color: var(--dbg-text);
+  background: var(--dbg-surface-2);
+}
+
+.debug-minimized-bar .debug-test-power-btn {
+  padding: 6px 14px;
+  font-size: 0.68rem;
 }
 
 /* Header */
@@ -68,7 +158,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-right: 2.5rem;
+  padding-right: 9.5rem;
   margin-bottom: 0.75rem;
   flex-shrink: 0;
 }
@@ -94,6 +184,7 @@
   padding: 6px 14px;
   border-radius: 999px;
   background: var(--dbg-surface);
+  flex-shrink: 0;
 }
 
 .debug-connection.online {

@@ -8,6 +8,8 @@
 typedef struct {
   uint8_t rangeHealth;
   uint8_t tankHealth;
+  uint32_t fanCooldownMs;
+  uint32_t laserCooldownMs;
 } GlobalStateData;
 
 typedef struct {
@@ -87,6 +89,9 @@ unsigned long DAMAGE_DEBOUNCE_MS = 400;
 unsigned long FAN_RELAY_ACTIVE_MS = 5000;
 unsigned long LASER_RELAY_ACTIVE_MS = 5000;
 unsigned long HUMIDIFIER_RELAY_ACTIVE_MS = 5000;
+unsigned long FAN_COOLDOWN_MS = 10000;
+unsigned long LASER_COOLDOWN_MS = 10000;
+unsigned long HAMMER_ACTIVE_MS = 1500;
 const unsigned long STATE_BROADCAST_MS = 100;
 const unsigned long SERIAL_STATE_MS = 200;
 const unsigned long MATCH_RESET_MS = 5000;
@@ -115,6 +120,7 @@ RemoteCommandData autoCommand = {
 
 bool automationActive = false;
 unsigned long lastAutomationTime = 0;
+unsigned long activeTimeoutMs = COMMAND_TIMEOUT_MS;
 
 // Debug: disable individual HP damage paths (all enabled by default)
 struct DamageDebugFlags {
@@ -230,6 +236,7 @@ void activatePowerDebug(const String &power) {
     autoCommand.isAutomatedMode = true;
     sendAutomationToTankBot();
     automationActive = true;
+    activeTimeoutMs = HAMMER_ACTIVE_MS;
     lastAutomationTime = millis();
     Serial.println("Hammer relay activated");
     return;
@@ -243,15 +250,18 @@ void applyGameSettings(const String &line) {
   int v;
   unsigned long ul;
 
-  if (parseJsonInt(line, "rangePiezoIr", v) && v >= 0 && v <= 100) RANGE_DAMAGE = v;
-  if (parseJsonInt(line, "rangeHumidity", v) && v >= 0 && v <= 100) RANGE_HUMIDITY_DAMAGE = v;
-  if (parseJsonInt(line, "tankLaser", v) && v >= 0 && v <= 100) TANK_LASER_DAMAGE = v;
-  if (parseJsonInt(line, "tankIr", v) && v >= 0 && v <= 100) TANK_IR_DAMAGE = v;
-  if (parseJsonInt(line, "piezoHitThreshold", v) && v >= 0) PIEZO_HIT_THRESHOLD = v;
-  if (parseJsonULong(line, "damageDebounceMs", ul) && ul >= 50 && ul <= 5000) DAMAGE_DEBOUNCE_MS = ul;
-  if (parseJsonULong(line, "fanRelayActiveMs", ul) && ul >= 500 && ul <= 60000) FAN_RELAY_ACTIVE_MS = ul;
-  if (parseJsonULong(line, "laserRelayActiveMs", ul) && ul >= 500 && ul <= 60000) LASER_RELAY_ACTIVE_MS = ul;
-  if (parseJsonULong(line, "humidifierRelayActiveMs", ul) && ul >= 500 && ul <= 60000) HUMIDIFIER_RELAY_ACTIVE_MS = ul;
+  if (parseJsonInt(line, "rPi", v) && v >= 0 && v <= 100) RANGE_DAMAGE = v;
+  if (parseJsonInt(line, "rHum", v) && v >= 0 && v <= 100) RANGE_HUMIDITY_DAMAGE = v;
+  if (parseJsonInt(line, "tLas", v) && v >= 0 && v <= 100) TANK_LASER_DAMAGE = v;
+  if (parseJsonInt(line, "tIr", v) && v >= 0 && v <= 100) TANK_IR_DAMAGE = v;
+  if (parseJsonInt(line, "pTh", v) && v >= 0) PIEZO_HIT_THRESHOLD = v;
+  if (parseJsonULong(line, "dDb", ul) && ul >= 50 && ul <= 5000) DAMAGE_DEBOUNCE_MS = ul;
+  if (parseJsonULong(line, "fanM", ul) && ul >= 500 && ul <= 60000) FAN_RELAY_ACTIVE_MS = ul;
+  if (parseJsonULong(line, "lasM", ul) && ul >= 500 && ul <= 60000) LASER_RELAY_ACTIVE_MS = ul;
+  if (parseJsonULong(line, "humM", ul) && ul >= 500 && ul <= 60000) HUMIDIFIER_RELAY_ACTIVE_MS = ul;
+  if (parseJsonULong(line, "fanC", ul) && ul >= 0 && ul <= 120000) FAN_COOLDOWN_MS = ul;
+  if (parseJsonULong(line, "lasC", ul) && ul >= 0 && ul <= 120000) LASER_COOLDOWN_MS = ul;
+  if (parseJsonULong(line, "hmrM", ul) && ul >= 100 && ul <= 60000) HAMMER_ACTIVE_MS = ul;
 
   Serial.println("SETTINGS: game configuration updated");
 }
@@ -352,7 +362,12 @@ void checkMatchEnd() {
 }
 
 void broadcastGlobalState() {
-  GlobalStateData state = {rangeBotHealth, tankBotHealth};
+  GlobalStateData state = {
+    rangeBotHealth,
+    tankBotHealth,
+    FAN_COOLDOWN_MS,
+    LASER_COOLDOWN_MS,
+  };
   esp_now_send(rangeBotRemoteMac, (uint8_t *)&state, sizeof(state));
   esp_now_send(tankBotRemoteMac, (uint8_t *)&state, sizeof(state));
 }
@@ -499,6 +514,7 @@ void applySerialCommandPair(char turnCmd, char driveCmd) {
     autoCommand.isAutomatedMode = true;
     sendAutomationToTankBot();
     automationActive = true;
+    activeTimeoutMs = HAMMER_ACTIVE_MS;
     lastAutomationTime = millis();
     return;
   }
@@ -516,6 +532,7 @@ void applySerialCommandPair(char turnCmd, char driveCmd) {
 
   sendAutomationToTankBot();
   automationActive = true;
+  activeTimeoutMs = COMMAND_TIMEOUT_MS;
   lastAutomationTime = millis();
 }
 
@@ -608,7 +625,7 @@ void loop() {
       applySerialCommandPair(turnCmd, driveCmd);
     }
 
-    if (automationActive && (millis() - lastAutomationTime > COMMAND_TIMEOUT_MS)) {
+    if (automationActive && (millis() - lastAutomationTime > activeTimeoutMs)) {
       stopTankBotAutomation();
     }
   } else {

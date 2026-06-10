@@ -18,11 +18,6 @@ export const DEFAULT_GAME_SETTINGS = {
     hammer: { activeMs: 1500, cooldownMs: 1500 },
     dodge: { activeMs: 3000, cooldownMs: 5000 },
   },
-  relayActiveMs: {
-    fan: 5000,
-    laser: 5000,
-    humidifier: 5000,
-  },
 };
 
 function mergePowerSection(defaults, current, patch) {
@@ -43,14 +38,12 @@ export function mergeGameSettings(partial, base = DEFAULT_GAME_SETTINGS) {
     return {
       damage: { ...base.damage },
       powers: mergePowerSection(base.powers, null, null),
-      relayActiveMs: { ...base.relayActiveMs },
     };
   }
 
   return {
     damage: { ...base.damage, ...(partial.damage || {}) },
     powers: mergePowerSection(base.powers, null, partial.powers),
-    relayActiveMs: { ...base.relayActiveMs, ...(partial.relayActiveMs || {}) },
   };
 }
 
@@ -58,7 +51,6 @@ export function patchGameSettings(current, patch) {
   return {
     damage: { ...current.damage, ...(patch.damage || {}) },
     powers: mergePowerSection(DEFAULT_GAME_SETTINGS.powers, current.powers, patch.powers),
-    relayActiveMs: { ...current.relayActiveMs, ...(patch.relayActiveMs || {}) },
   };
 }
 
@@ -66,15 +58,20 @@ export function patchGameSettings(current, patch) {
 export function toFirmwareSettings(settings) {
   const s = mergeGameSettings(settings);
   return {
-    rangePiezoIr: s.damage.rangePiezoIr,
-    rangeHumidity: s.damage.rangeHumidity,
-    tankLaser: s.damage.tankLaser,
-    tankIr: s.damage.tankIr,
-    piezoHitThreshold: s.damage.piezoHitThreshold,
-    damageDebounceMs: s.damage.damageDebounceMs,
-    fanRelayActiveMs: s.relayActiveMs.fan,
-    laserRelayActiveMs: s.relayActiveMs.laser,
-    humidifierRelayActiveMs: s.relayActiveMs.humidifier,
+    SETTINGS: true,
+    rPi: s.damage.rangePiezoIr,
+    rHum: s.damage.rangeHumidity,
+    tLas: s.damage.tankLaser,
+    tIr: s.damage.tankIr,
+    pTh: s.damage.piezoHitThreshold,
+    dDb: s.damage.damageDebounceMs,
+    fanM: s.powers.fan.activeMs,
+    lasM: s.powers.laser.activeMs,
+    humM: s.powers.humidifier.activeMs,
+    fanC: s.powers.fan.cooldownMs,
+    lasC: s.powers.laser.cooldownMs,
+    hmrM: s.powers.hammer.activeMs,
+    hmrC: s.powers.hammer.cooldownMs,
   };
 }
 
@@ -98,14 +95,8 @@ export const DAMAGE_SETTING_FIELDS = [
 
 export const POWER_SETTING_FIELDS = [
   { id: 'fan', label: 'Fan (Ultimate)', bot: 'Range Bot', color: 'red' },
-  { id: 'laser', label: 'Laser', bot: 'Range Bot', color: 'red' },
+  { id: 'laser', label: 'Laser (Ultimate)', bot: 'Range Bot', color: 'red' },
   { id: 'dodge', label: 'Dodge', bot: 'Range Bot', color: 'red' },
   { id: 'humidifier', label: 'Humidifier (Ultimate)', bot: 'Tank Bot', color: 'blue' },
   { id: 'hammer', label: 'Hammer', bot: 'Tank Bot', color: 'blue' },
-];
-
-export const RELAY_SETTING_FIELDS = [
-  { key: 'fan', label: 'Fan Relay Active', unit: 'ms', min: 500, max: 60000, step: 500 },
-  { key: 'laser', label: 'Laser Relay Active', unit: 'ms', min: 500, max: 60000, step: 500 },
-  { key: 'humidifier', label: 'Humidifier Relay Active', unit: 'ms', min: 500, max: 60000, step: 500 },
 ];

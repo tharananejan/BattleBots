@@ -10,9 +10,11 @@ const Arena = ({ bots }) => {
   const tankBot = bots?.find((b) => b.color === 'blue');
 
   const fanPower = rangeBot?.powers?.find((p) => p.id === 'fan');
+  const laserPower = rangeBot?.powers?.find((p) => p.id === 'laser');
   const humidifierPower = tankBot?.powers?.find((p) => p.id === 'humidifier');
 
   const isFanActive = fanPower?.status === 'running';
+  const isLaserActive = laserPower?.status === 'running';
   const isHumidifierActive = humidifierPower?.status === 'running';
 
   return (
@@ -35,6 +37,15 @@ const Arena = ({ bots }) => {
         <div className={`humidifier bottom-left-h2 ${isHumidifierActive ? 'working' : ''}`}></div>
         <div className={`humidifier bottom-right-h1 ${isHumidifierActive ? 'working' : ''}`}></div>
         <div className={`humidifier bottom-right-h2 ${isHumidifierActive ? 'working' : ''}`}></div>
+
+        {/* Three horizontal laser beams when Range Bot laser power is active */}
+        {isLaserActive && (
+          <div className="laser-beams-container">
+            <div className="laser-beam"></div>
+            <div className="laser-beam"></div>
+            <div className="laser-beam"></div>
+          </div>
+        )}
 
         <div className="battle-field">
           {bots.map((bot) => (
