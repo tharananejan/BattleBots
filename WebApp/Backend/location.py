@@ -1,6 +1,8 @@
 import asyncio
+import copy
 import json
 import math
+import os
 import queue
 import threading
 import time
@@ -9,6 +11,34 @@ import cv2 as cv
 import numpy as np
 import serial
 import websockets
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+GAME_SETTINGS_PATH = os.path.join(SCRIPT_DIR, "game_settings.json")
+
+DEFAULT_GAME_SETTINGS = {
+    "damage": {
+        "rangePiezoIr": 5,
+        "rangeHumidity": 5,
+        "tankLaser": 10,
+        "tankIr": 2,
+        "piezoHitThreshold": 200,
+        "damageDebounceMs": 400,
+        "hallFreezeThreshold": 100,
+        "tankFreezeDurationMs": 10000,
+    },
+    "powers": {
+        "fan": {"activeMs": 5000, "cooldownMs": 10000},
+        "laser": {"activeMs": 5000, "cooldownMs": 10000},
+        "humidifier": {"activeMs": 5000, "cooldownMs": 10000},
+        "hammer": {"activeMs": 1500, "cooldownMs": 1500},
+        "dodge": {"activeMs": 3000, "cooldownMs": 5000},
+    },
+    "relayActiveMs": {
+        "fan": 5000,
+        "laser": 5000,
+        "humidifier": 5000,
+    },
+}
 
 SERIAL_PORT = "COM14"
 BAUD_RATE = 115200
@@ -35,11 +65,77 @@ RELAY_LINE_TO_POWER = {
     "Fan relay activated": "fan",
     "Laser relay activated": "laser",
     "Humidifier relay activated": "humidifier",
+    "Hammer relay activated": "hammer",
 }
 
 outbound_queue: queue.Queue[str | None] = queue.Queue()
 inbound_queue: queue.Queue[str] = queue.Queue()
 serial_buffer = ""
+game_settings = copy.deepcopy(DEFAULT_GAME_SETTINGS)
+
+
+def merge_game_settings(partial: dict | None) -> dict:
+    if not partial:
+        return copy.deepcopy(DEFAULT_GAME_SETTINGS)
+
+    merged = copy.deepcopy(DEFAULT_GAME_SETTINGS)
+    if "damage" in partial:
+        merged["damage"].update(partial["damage"])
+    if "relayActiveMs" in partial:
+        merged["relayActiveMs"].update(partial["relayActiveMs"])
+    if "powers" in partial:
+        for power_id, values in partial["powers"].items():
+            if power_id in merged["powers"] and isinstance(values, dict):
+                merged["powers"][power_id].update(values)
+    return merged
+
+
+def load_game_settings() -> dict:
+    global game_settings
+    if os.path.exists(GAME_SETTINGS_PATH):
+        try:
+            with open(GAME_SETTINGS_PATH, encoding="utf-8") as settings_file:
+                game_settings = merge_game_settings(json.load(settings_file))
+                print(f"Loaded game settings from {GAME_SETTINGS_PATH}")
+                return game_settings
+        except Exception as error:
+            print(f"Failed to load game settings: {error}")
+    game_settings = copy.deepcopy(DEFAULT_GAME_SETTINGS)
+    save_game_settings(game_settings)
+    return game_settings
+
+
+def save_game_settings(settings: dict) -> None:
+    try:
+        with open(GAME_SETTINGS_PATH, "w", encoding="utf-8") as settings_file:
+            json.dump(settings, settings_file, indent=2)
+            settings_file.write("\n")
+    except Exception as error:
+        print(f"Failed to save game settings: {error}")
+
+
+def to_firmware_settings(settings: dict) -> dict:
+    merged = merge_game_settings(settings)
+    return {
+        "SETTINGS": True,
+        "rangePiezoIr": merged["damage"]["rangePiezoIr"],
+        "rangeHumidity": merged["damage"]["rangeHumidity"],
+        "tankLaser": merged["damage"]["tankLaser"],
+        "tankIr": merged["damage"]["tankIr"],
+        "piezoHitThreshold": merged["damage"]["piezoHitThreshold"],
+        "damageDebounceMs": merged["damage"]["damageDebounceMs"],
+        "fanRelayActiveMs": merged["relayActiveMs"]["fan"],
+        "laserRelayActiveMs": merged["relayActiveMs"]["laser"],
+        "humidifierRelayActiveMs": merged["relayActiveMs"]["humidifier"],
+    }
+
+
+def broadcast_game_settings(settings: dict | None = None) -> None:
+    payload = {
+        "type": "GAME_SETTINGS",
+        "settings": settings if settings is not None else game_settings,
+    }
+    ws_broadcast(payload)
 
 
 def ws_broadcast(payload: dict) -> None:
@@ -71,6 +167,9 @@ async def _ws_server(clients: set) -> None:
         clients.add(websocket)
         print("WebSocket client connected")
         try:
+            await websocket.send(
+                json.dumps({"type": "GAME_SETTINGS", "settings": game_settings})
+            )
             async for message in websocket:
                 inbound_queue.put(message)
         finally:
@@ -153,7 +252,13 @@ def process_serial_line(line: str, current_heading: float, state: dict) -> float
     if "isAutomatedMode" in data:
         telemetry["isAutomatedMode"] = data["isAutomatedMode"]
         state["isAutomatedMode"] = data["isAutomatedMode"]
-        
+    if "gameActive" in data:
+        telemetry["gameActive"] = data["gameActive"]
+        state["gameActive"] = data["gameActive"]
+    if "testMode" in data:
+        telemetry["testMode"] = data["testMode"]
+        state["testMode"] = data["testMode"]
+
     ws_broadcast(telemetry)
     print("ESP telemetry:", telemetry)
     return heading
@@ -300,9 +405,21 @@ def broadcast_positions(blue_marker, red_marker):
         ws_broadcast(payload)
 
 
+def apply_game_settings_update(msg: dict, ser) -> None:
+    global game_settings
+    incoming = msg.get("settings", msg)
+    game_settings = merge_game_settings(incoming)
+    save_game_settings(game_settings)
+    broadcast_game_settings(game_settings)
+    send_serial_json(ser, to_firmware_settings(game_settings))
+    print("Game settings updated:", game_settings)
+
+
 def main():
+    load_game_settings()
     start_websocket_server()
     ser = open_serial()
+    send_serial_json(ser, to_firmware_settings(game_settings))
 
     cap = RealTimeIPCamera(url, FRAME_SIZE)
     cv.namedWindow("Tank Bot Automation", cv.WINDOW_NORMAL)
@@ -328,6 +445,8 @@ def main():
         "isAutomatedMode": False,
         "tankHealth": 100,
         "rangeHealth": 100,
+        "gameActive": False,
+        "testMode": False,
         "match_over": False,
         "last_blue_pos": None,
         "last_red_pos": None,
@@ -344,14 +463,31 @@ def main():
                         print("Received START_BATTLE signal. Calibrating MPU to camera.")
                         needs_calibration = True
                         state["match_over"] = False
+                        state["gameActive"] = True
                         state["last_blue_pos"] = None
                         state["last_red_pos"] = None
+                        send_serial_json(ser, {"START_BATTLE": True})
+                    elif msg.get("type") == "SET_TEST_MODE":
+                        enabled = bool(msg.get("enabled", False))
+                        print(f"Received SET_TEST_MODE signal: {enabled}")
+                        state["testMode"] = enabled
+                        send_serial_json(ser, {"TEST_MODE": enabled})
                     elif msg.get("type") == "DEBUG_DAMAGE":
                         print("Received DEBUG_DAMAGE signal:", msg)
                         send_serial_json(ser, msg)
                     elif msg.get("type") == "SET_MODE":
                         print("Received SET_MODE signal:", msg)
                         send_serial_json(ser, msg)
+                    elif msg.get("type") == "UPDATE_SETTINGS":
+                        print("Received UPDATE_SETTINGS signal")
+                        apply_game_settings_update(msg, ser)
+                    elif msg.get("type") == "ACTIVATE_POWER":
+                        power_id = msg.get("power")
+                        print(f"Received ACTIVATE_POWER signal: {power_id}")
+                        if power_id == "dodge":
+                            ws_broadcast({"power_activated": "dodge"})
+                        elif power_id:
+                            send_serial_json(ser, {"ACTIVATE_POWER": power_id})
                 except Exception as e:
                     print(f"Error parsing inbound message: {e}")
 
@@ -359,6 +495,7 @@ def main():
 
             if state.get("tankHealth", 100) <= 0 or state.get("rangeHealth", 100) <= 0:
                 state["match_over"] = True
+                state["gameActive"] = False
 
             ret, frame = cap.read()
             if not ret or frame is None:
@@ -423,7 +560,11 @@ def main():
 
             cmd_turn = b"x"
             cmd_drive = b"x"
-            automation_blocked = state.get("match_over") and not DEBUG_IGNORE_DEATH
+            combat_allowed = state.get("gameActive") or state.get("testMode")
+            automation_blocked = (
+                not combat_allowed
+                or (state.get("match_over") and not DEBUG_IGNORE_DEATH)
+            )
 
             if state.get("isAutomatedMode") and not automation_blocked:
                 if blue_marker is not None and red_marker is not None:
@@ -476,7 +617,7 @@ def main():
             elif state.get("isAutomatedMode") and automation_blocked:
                 print("Match over; automation stopped until START_BATTLE")
 
-            if ser is not None and state.get("isAutomatedMode"):
+            if ser is not None and state.get("isAutomatedMode") and combat_allowed:
                 ser.write(cmd_turn)
                 ser.write(cmd_drive)
                 print(f"Commands sent: cmd_turn={cmd_turn}, cmd_drive={cmd_drive}")

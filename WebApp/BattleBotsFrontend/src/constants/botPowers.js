@@ -1,52 +1,69 @@
 /** Power definitions aligned with BattleGround / remote firmware */
 
-export const HALL_FREEZE_THRESHOLD = 100;
-export const TANK_FREEZE_DURATION_MS = 10000;
+import { DEFAULT_GAME_SETTINGS } from './gameSettings';
 
-export const RANGE_BOT_POWER_DEFS = [
-  {
-    id: 'fan',
-    name: 'Fan',
-    icon: 'FAN',
-    type: 'ultimate',
-    isUltimate: true,
-    activeMs: 5000,
-    cooldownMs: 10000,
-  },
-  {
-    id: 'laser',
-    name: 'Laser',
-    icon: 'LSR',
-    type: 'normal',
-    isUltimate: false,
-  },
-  {
-    id: 'dodge',
-    name: 'Dodge',
-    icon: 'DDG',
-    type: 'normal',
-    isUltimate: false,
-  },
-];
+export const HALL_FREEZE_THRESHOLD = DEFAULT_GAME_SETTINGS.damage.hallFreezeThreshold;
+export const TANK_FREEZE_DURATION_MS = DEFAULT_GAME_SETTINGS.damage.tankFreezeDurationMs;
 
-export const TANK_BOT_POWER_DEFS = [
-  {
-    id: 'humidifier',
-    name: 'Humidifier',
-    icon: 'HUM',
-    type: 'ultimate',
-    isUltimate: true,
-    activeMs: 5000,
-    cooldownMs: 10000,
-  },
-  {
-    id: 'hammer',
-    name: 'Hammer',
-    icon: 'HMR',
-    type: 'normal',
-    isUltimate: false,
-  },
-];
+function buildRangePowerDefs(settings = DEFAULT_GAME_SETTINGS) {
+  const powers = settings.powers;
+  return [
+    {
+      id: 'fan',
+      name: 'Fan',
+      icon: 'FAN',
+      type: 'ultimate',
+      isUltimate: true,
+      activeMs: powers.fan.activeMs,
+      cooldownMs: powers.fan.cooldownMs,
+    },
+    {
+      id: 'laser',
+      name: 'Laser',
+      icon: 'LSR',
+      type: 'normal',
+      isUltimate: false,
+      activeMs: powers.laser.activeMs,
+      cooldownMs: powers.laser.cooldownMs,
+    },
+    {
+      id: 'dodge',
+      name: 'Dodge',
+      icon: 'DDG',
+      type: 'normal',
+      isUltimate: false,
+      activeMs: powers.dodge.activeMs,
+      cooldownMs: powers.dodge.cooldownMs,
+    },
+  ];
+}
+
+function buildTankPowerDefs(settings = DEFAULT_GAME_SETTINGS) {
+  const powers = settings.powers;
+  return [
+    {
+      id: 'humidifier',
+      name: 'Humidifier',
+      icon: 'HUM',
+      type: 'ultimate',
+      isUltimate: true,
+      activeMs: powers.humidifier.activeMs,
+      cooldownMs: powers.humidifier.cooldownMs,
+    },
+    {
+      id: 'hammer',
+      name: 'Hammer',
+      icon: 'HMR',
+      type: 'normal',
+      isUltimate: false,
+      activeMs: powers.hammer.activeMs,
+      cooldownMs: powers.hammer.cooldownMs,
+    },
+  ];
+}
+
+export const RANGE_BOT_POWER_DEFS = buildRangePowerDefs();
+export const TANK_BOT_POWER_DEFS = buildTankPowerDefs();
 
 export function createUltimatePowerState(def) {
   return {
@@ -74,20 +91,44 @@ export function createNormalPowerState(def) {
   };
 }
 
-export function initRangePowers() {
-  return RANGE_BOT_POWER_DEFS.map((def) =>
+export function initRangePowers(settings = DEFAULT_GAME_SETTINGS) {
+  return buildRangePowerDefs(settings).map((def) =>
     def.type === 'ultimate'
       ? createUltimatePowerState(def)
       : createNormalPowerState(def)
   );
 }
 
-export function initTankPowers() {
-  return TANK_BOT_POWER_DEFS.map((def) =>
+export function initTankPowers(settings = DEFAULT_GAME_SETTINGS) {
+  return buildTankPowerDefs(settings).map((def) =>
     def.type === 'ultimate'
       ? createUltimatePowerState(def)
       : createNormalPowerState(def)
   );
+}
+
+export function applyPowerTimings(powers, settings = DEFAULT_GAME_SETTINGS) {
+  const defs = [...buildRangePowerDefs(settings), ...buildTankPowerDefs(settings)];
+  const defMap = Object.fromEntries(defs.map((def) => [def.id, def]));
+
+  return powers.map((power) => {
+    const def = defMap[power.id];
+    if (!def) return power;
+
+    if (power.type === 'ultimate') {
+      return {
+        ...power,
+        activeMs: def.activeMs,
+        cooldownMs: def.cooldownMs,
+      };
+    }
+
+    return {
+      ...power,
+      activeMs: def.activeMs,
+      cooldownMs: def.cooldownMs,
+    };
+  });
 }
 
 /** Ultimate powers first, then normal powers */

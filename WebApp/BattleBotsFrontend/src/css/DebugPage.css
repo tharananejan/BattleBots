@@ -601,6 +601,84 @@ body.light-theme .debug-log-entry {
   font-size: 0.68rem;
 }
 
+.debug-game-state-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.debug-game-state-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+body.light-theme .debug-game-state-card {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.debug-game-state-card.active {
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.debug-game-state-card.locked {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.debug-game-state-label {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.debug-game-state-badge {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.debug-game-state-badge.on {
+  color: #22c55e;
+}
+
+.debug-game-state-badge.off {
+  color: #64748b;
+}
+
+.debug-test-mode-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 14px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px dashed rgba(245, 158, 11, 0.35);
+}
+
+body.light-theme .debug-test-mode-panel {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.debug-test-mode-title {
+  margin: 0 0 0.35rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  color: var(--text-main);
+}
+
+.debug-test-mode-btn {
+  flex-shrink: 0;
+  min-width: 160px;
+}
+
 @keyframes debugFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -617,6 +695,219 @@ body.light-theme .debug-log-entry {
   }
 }
 
+.debug-settings-section {
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 14px;
+  padding: 1rem;
+  background: rgba(245, 158, 11, 0.04);
+}
+
+body.light-theme .debug-settings-section {
+  background: rgba(245, 158, 11, 0.06);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.debug-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.debug-settings-header .debug-section-title {
+  margin-bottom: 0;
+}
+
+.debug-settings-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.debug-settings-subtitle {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f59e0b;
+  margin: 1rem 0 0.6rem;
+}
+
+.debug-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.debug-setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+body.light-theme .debug-setting-field {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.debug-setting-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.debug-setting-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.debug-setting-input {
+  flex: 1;
+  min-width: 0;
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-main);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+body.light-theme .debug-setting-input {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.debug-setting-input:focus {
+  outline: none;
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.debug-setting-unit {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.debug-power-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.debug-power-setting-card {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+body.light-theme .debug-power-setting-card {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.debug-power-setting-card.red {
+  border-left: 3px solid #ef4444;
+}
+
+.debug-power-setting-card.blue {
+  border-left: 3px solid #3b82f6;
+}
+
+.debug-power-setting-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.debug-power-setting-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.debug-power-setting-summary {
+  font-size: 0.65rem;
+  color: #64748b;
+  font-family: 'Space Grotesk', monospace;
+  margin: 0;
+}
+
+.debug-test-power-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.debug-power-setting-card.red .debug-test-power-btn {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.debug-power-setting-card.blue .debug-test-power-btn {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.debug-test-power-btn:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.debug-apply-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.debug-apply-btn:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.debug-apply-btn:disabled,
+.debug-clear-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 @media (max-width: 640px) {
   .debug-container {
     padding: 1.25rem;
@@ -628,5 +919,27 @@ body.light-theme .debug-log-entry {
 
   .debug-health-row {
     grid-template-columns: 1fr;
+  }
+
+  .debug-game-state-row {
+    grid-template-columns: 1fr;
+  }
+
+  .debug-test-mode-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .debug-settings-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .debug-settings-actions {
+    justify-content: stretch;
+  }
+
+  .debug-settings-actions button {
+    flex: 1;
   }
 }

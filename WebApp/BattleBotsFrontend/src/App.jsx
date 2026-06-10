@@ -28,6 +28,12 @@ const App = () => {
     setTankAutomatedMode,
     debugDamage,
     setDebugDamagePath,
+    battleStarted,
+    testMode,
+    toggleTestMode,
+    gameSettings,
+    updateGameSettings,
+    activatePowerManually,
   } = useBattleLogic('ws://127.0.0.1:8765');
 
   const handleCloseLaunch = useCallback(() => {
@@ -84,6 +90,12 @@ const App = () => {
           bots={bots}
           debugDamage={debugDamage}
           setDebugDamagePath={setDebugDamagePath}
+          battleStarted={battleStarted}
+          testMode={testMode}
+          toggleTestMode={toggleTestMode}
+          gameSettings={gameSettings}
+          updateGameSettings={updateGameSettings}
+          activatePowerManually={activatePowerManually}
           onClose={() => setIsDebugOpen(false)}
         />
       )}

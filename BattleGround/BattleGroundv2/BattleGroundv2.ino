@@ -78,12 +78,15 @@ unsigned long humidifierStartTime = 0;
 // --- Health (server-authoritative) ---
 uint8_t rangeBotHealth = 100;
 uint8_t tankBotHealth = 100;
-const int RANGE_DAMAGE = 5;
-const int RANGE_HUMIDITY_DAMAGE = 5;
-const int TANK_LASER_DAMAGE = 10;
-const int TANK_IR_DAMAGE = 2;
-const int PIEZO_HIT_THRESHOLD = 200;//piezo 
-const unsigned long DAMAGE_DEBOUNCE_MS = 400;
+int RANGE_DAMAGE = 5;
+int RANGE_HUMIDITY_DAMAGE = 5;
+int TANK_LASER_DAMAGE = 10;
+int TANK_IR_DAMAGE = 2;
+int PIEZO_HIT_THRESHOLD = 200;
+unsigned long DAMAGE_DEBOUNCE_MS = 400;
+unsigned long FAN_RELAY_ACTIVE_MS = 5000;
+unsigned long LASER_RELAY_ACTIVE_MS = 5000;
+unsigned long HUMIDIFIER_RELAY_ACTIVE_MS = 5000;
 const unsigned long STATE_BROADCAST_MS = 100;
 const unsigned long SERIAL_STATE_MS = 200;
 const unsigned long MATCH_RESET_MS = 5000;
@@ -96,6 +99,8 @@ unsigned long lastStateBroadcastMs = 0;
 unsigned long lastSerialStateMs = 0;
 unsigned long matchEndMs = 0;
 bool matchEnded = false;
+bool gameActive = false;
+bool testMode = false;
 
 TankBotTelemetry lastTankTelemetry = {false, false, false, 9999, 0};
 
@@ -119,6 +124,12 @@ struct DamageDebugFlags {
   bool tankIr = true;
 } damageDebug;
 
+bool combatAllowed() {
+  return gameActive || testMode;
+}
+
+void sendAutomationToTankBot();
+
 bool parseJsonBool(const String &json, const char *key, bool &outVal) {
   String search = String("\"") + key + "\":";
   int idx = json.indexOf(search);
@@ -136,7 +147,135 @@ bool parseJsonBool(const String &json, const char *key, bool &outVal) {
   return false;
 }
 
+bool parseJsonInt(const String &json, const char *key, int &outVal) {
+  String search = String("\"") + key + "\":";
+  int idx = json.indexOf(search);
+  if (idx < 0) return false;
+  int valStart = idx + search.length();
+  while (valStart < (int)json.length() && json[valStart] == ' ') valStart++;
+  int valEnd = valStart;
+  while (valEnd < (int)json.length() && (isDigit(json[valEnd]) || json[valEnd] == '-')) valEnd++;
+  if (valEnd == valStart) return false;
+  outVal = json.substring(valStart, valEnd).toInt();
+  return true;
+}
+
+bool parseJsonULong(const String &json, const char *key, unsigned long &outVal) {
+  int parsed = 0;
+  if (!parseJsonInt(json, key, parsed)) return false;
+  if (parsed < 0) return false;
+  outVal = (unsigned long)parsed;
+  return true;
+}
+
+bool parseJsonString(const String &json, const char *key, String &outVal) {
+  String search = String("\"") + key + "\":\"";
+  int idx = json.indexOf(search);
+  if (idx < 0) {
+    search = String("\"") + key + "\":";
+    idx = json.indexOf(search);
+    if (idx < 0) return false;
+    int valStart = idx + search.length();
+    while (valStart < (int)json.length() && json[valStart] == ' ') valStart++;
+    if (json[valStart] != '"') return false;
+    valStart++;
+    int valEnd = json.indexOf('"', valStart);
+    if (valEnd < 0) return false;
+    outVal = json.substring(valStart, valEnd);
+    return true;
+  }
+  int valStart = idx + search.length();
+  int valEnd = json.indexOf('"', valStart);
+  if (valEnd < 0) return false;
+  outVal = json.substring(valStart, valEnd);
+  return true;
+}
+
+void activatePowerDebug(const String &power) {
+  if (!combatAllowed()) {
+    Serial.println("ACTIVATE_POWER: blocked (combat not allowed)");
+    return;
+  }
+
+  if (power == "fan") {
+    Serial.println("Fan relay activated");
+    digitalWrite(fanout, HIGH);
+    fanon = true;
+    fanStartTime = millis();
+    return;
+  }
+
+  if (power == "laser") {
+    Serial.println("Laser relay activated");
+    digitalWrite(lasorout, HIGH);
+    laseron = true;
+    laserStartTime = millis();
+    return;
+  }
+
+  if (power == "humidifier") {
+    Serial.println("Humidifier relay activated");
+    digitalWrite(humidifier, HIGH);
+    humidifierOn = true;
+    humidifierStartTime = millis();
+    return;
+  }
+
+  if (power == "hammer") {
+    autoCommand.xVal = JOYSTICK_CENTER;
+    autoCommand.yVal = JOYSTICK_CENTER;
+    autoCommand.sw1 = false;
+    autoCommand.btn1 = true;
+    autoCommand.btn2 = false;
+    autoCommand.isAutomatedMode = true;
+    sendAutomationToTankBot();
+    automationActive = true;
+    lastAutomationTime = millis();
+    Serial.println("Hammer relay activated");
+    return;
+  }
+
+  Serial.print("ACTIVATE_POWER: unknown power ");
+  Serial.println(power);
+}
+
+void applyGameSettings(const String &line) {
+  int v;
+  unsigned long ul;
+
+  if (parseJsonInt(line, "rangePiezoIr", v) && v >= 0 && v <= 100) RANGE_DAMAGE = v;
+  if (parseJsonInt(line, "rangeHumidity", v) && v >= 0 && v <= 100) RANGE_HUMIDITY_DAMAGE = v;
+  if (parseJsonInt(line, "tankLaser", v) && v >= 0 && v <= 100) TANK_LASER_DAMAGE = v;
+  if (parseJsonInt(line, "tankIr", v) && v >= 0 && v <= 100) TANK_IR_DAMAGE = v;
+  if (parseJsonInt(line, "piezoHitThreshold", v) && v >= 0) PIEZO_HIT_THRESHOLD = v;
+  if (parseJsonULong(line, "damageDebounceMs", ul) && ul >= 50 && ul <= 5000) DAMAGE_DEBOUNCE_MS = ul;
+  if (parseJsonULong(line, "fanRelayActiveMs", ul) && ul >= 500 && ul <= 60000) FAN_RELAY_ACTIVE_MS = ul;
+  if (parseJsonULong(line, "laserRelayActiveMs", ul) && ul >= 500 && ul <= 60000) LASER_RELAY_ACTIVE_MS = ul;
+  if (parseJsonULong(line, "humidifierRelayActiveMs", ul) && ul >= 500 && ul <= 60000) HUMIDIFIER_RELAY_ACTIVE_MS = ul;
+
+  Serial.println("SETTINGS: game configuration updated");
+}
+
 void processSerialJsonLine(const String &line) {
+  if (line.indexOf("START_BATTLE") >= 0) {
+    bool v;
+    if (parseJsonBool(line, "START_BATTLE", v) && v) {
+      gameActive = true;
+      matchEnded = false;
+      Serial.println("START_BATTLE: game active");
+    }
+    return;
+  }
+
+  if (line.indexOf("TEST_MODE") >= 0) {
+    bool v;
+    if (parseJsonBool(line, "TEST_MODE", v)) {
+      testMode = v;
+      Serial.println(testMode ? "TEST_MODE: enabled" : "TEST_MODE: disabled");
+    }
+    return;
+  }
+
   if (line.indexOf("DEBUG_DAMAGE") >= 0) {
     bool v;
     if (parseJsonBool(line, "rangePiezoIr", v)) damageDebug.rangePiezoIr = v;
@@ -154,6 +293,21 @@ void processSerialJsonLine(const String &line) {
       ModeControlData mode = {tankBotAutomatedMode};
       esp_now_send(tankBotRemoteMac, (uint8_t *)&mode, sizeof(mode));
       Serial.println(tankBotAutomatedMode ? "SET_MODE: Automated" : "SET_MODE: Manual");
+    }
+    return;
+  }
+
+  if (line.indexOf("SETTINGS") >= 0) {
+    applyGameSettings(line);
+    return;
+  }
+
+  if (line.indexOf("ACTIVATE_POWER") >= 0) {
+    String power;
+    if (parseJsonString(line, "ACTIVATE_POWER", power)) {
+      activatePowerDebug(power);
+    } else if (parseJsonString(line, "power", power)) {
+      activatePowerDebug(power);
     }
     return;
   }
@@ -192,7 +346,8 @@ void checkMatchEnd() {
     rangeBotHealth = 100;
     tankBotHealth = 100;
     matchEnded = false;
-    Serial.println("Match reset: health restored to 100");
+    gameActive = false;
+    Serial.println("Match reset: health restored to 100, game inactive");
   }
 }
 
@@ -203,7 +358,7 @@ void broadcastGlobalState() {
 }
 
 void applyRangeDamage(const RangeBotTelemetry &t) {
-  if (rangeBotHealth == 0) return;
+  if (!combatAllowed() || rangeBotHealth == 0) return;
 
   bool hit = (t.piezo > PIEZO_HIT_THRESHOLD || t.ir1 || t.ir2);
   if (damageDebug.rangePiezoIr && hit && (millis() - lastRangeDamageMs >= DAMAGE_DEBOUNCE_MS)) {
@@ -230,7 +385,7 @@ void applyRangeDamage(const RangeBotTelemetry &t) {
 }
 
 void applyTankDamage(const TankBotTelemetry &t) {
-  if (tankBotHealth == 0) return;
+  if (!combatAllowed() || tankBotHealth == 0) return;
 
   if (damageDebug.tankLaser && !t.laserValue && (millis() - lastTankLaserDamageMs >= DAMAGE_DEBOUNCE_MS)) {
     lastTankLaserDamageMs = millis();
@@ -272,6 +427,10 @@ void printCombinedStateJson() {
   Serial.print(tankBotHealth);
   Serial.print(",\"isAutomatedMode\":");
   Serial.print(tankBotAutomatedMode ? "true" : "false");
+  Serial.print(",\"gameActive\":");
+  Serial.print(gameActive ? "true" : "false");
+  Serial.print(",\"testMode\":");
+  Serial.print(testMode ? "true" : "false");
   Serial.print(",\"debugDamage\":{");
   Serial.print("\"rangePiezoIr\":");
   Serial.print(damageDebug.rangePiezoIr ? "true" : "false");
@@ -329,7 +488,7 @@ bool isValidMotionChar(char cmd) {
 }
 
 void applySerialCommandPair(char turnCmd, char driveCmd) {
-  if (tankBotHealth == 0) return;
+  if (!combatAllowed() || tankBotHealth == 0) return;
 
   if (driveCmd == 'h') {
     autoCommand.xVal = JOYSTICK_CENTER;
@@ -378,7 +537,7 @@ void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
   if (isSameMac(src, tankBotRemoteMac) && len == sizeof(TankBotRemoteData)) {
     memcpy(&tankBotRemoteData, incomingData, sizeof(tankBotRemoteData));
     tankBotAutomatedMode = tankBotRemoteData.isAutomatedMode;
-    if (tankBotHealth > 0 && !tankBotAutomatedMode && tankBotRemoteData.btn2) {
+    if (combatAllowed() && tankBotHealth > 0 && !tankBotAutomatedMode && tankBotRemoteData.btn2) {
       humidifierPending = true;
       Serial.println("Signal Received from TankBot Remote: Humidifier ON");
     }
@@ -462,36 +621,36 @@ void loop() {
     }
   }
 
-  if (rangeBotHealth > 0 && rangeBotPowers.fanVal == 1) {
+  if (combatAllowed() && rangeBotHealth > 0 && rangeBotPowers.fanVal == 1) {
     Serial.println("Signal Received: Fan relay activated");
     digitalWrite(fanout, HIGH);
     fanon = true;
     fanStartTime = millis();
   }
-  if (fanon && millis() - fanStartTime > 5 * 1000) {
+  if (fanon && millis() - fanStartTime > FAN_RELAY_ACTIVE_MS) {
     fanon = false;
     digitalWrite(fanout, LOW);
   }
 
-  if (rangeBotHealth > 0 && rangeBotPowers.laserVal == 1) {
+  if (combatAllowed() && rangeBotHealth > 0 && rangeBotPowers.laserVal == 1) {
     Serial.println("Signal Received: Laser relay activated");
     digitalWrite(lasorout, HIGH);
     laseron = true;
     laserStartTime = millis();
   }
-  if (laseron && millis() - laserStartTime > 5 * 1000) {
+  if (laseron && millis() - laserStartTime > LASER_RELAY_ACTIVE_MS) {
     laseron = false;
     digitalWrite(lasorout, LOW);
   }
 
-  if (tankBotHealth > 0 && humidifierPending) {
+  if (combatAllowed() && tankBotHealth > 0 && humidifierPending) {
     Serial.println("Signal Received: Humidifier relay activated");
     digitalWrite(humidifier, HIGH);
     humidifierOn = true;
     humidifierStartTime = millis();
     humidifierPending = false;
   }
-  if (humidifierOn && millis() - humidifierStartTime > 5 * 1000) {
+  if (humidifierOn && millis() - humidifierStartTime > HUMIDIFIER_RELAY_ACTIVE_MS) {
     humidifierOn = false;
     digitalWrite(humidifier, LOW);
   }
