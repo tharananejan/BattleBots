@@ -49,9 +49,14 @@ const CameraFeedModal = ({
     if (!normalizedUrl) return;
 
     setDraftUrl(normalizedUrl);
-    updateGameSettings({ camera: { url: normalizedUrl } });
     setStreamStatus('connecting');
     setStreamKey((prev) => prev + 1);
+
+    if (isDirty) {
+      updateGameSettings({ camera: { url: normalizedUrl } });
+    } else {
+      sendCalibrationMessage({ type: 'RECONNECT_CAMERA' });
+    }
   };
 
   const handleToggleCalibration = () => {
@@ -123,9 +128,9 @@ const CameraFeedModal = ({
               type="button"
               className="camera-feed-update-btn"
               onClick={handleUpdateUrl}
-              disabled={!draftUrl.trim() || !isDirty}
+              disabled={!draftUrl.trim()}
             >
-              Update URL
+              {isDirty ? 'Update URL' : 'Reconnect'}
             </button>
           </div>
           <p className="camera-feed-hint">

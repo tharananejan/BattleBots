@@ -673,8 +673,70 @@ def open_camera(preferred_index, frame_size):
     return None, None, None
 
 
-def broadcast_positions(blue_marker, red_marker, calib_marker=None, homography=None):
-    payload = {}
+IP_CAMERA_WARNING_TEXT = "IP camera not connected"
+
+
+def release_camera(cap) -> None:
+    if cap is None:
+        return
+    try:
+        cap.release()
+    except Exception:
+        pass
+
+
+def open_camera_with_fallback(camera_url: str) -> tuple[object | None, bool, bool]:
+    """Try IP camera first, then local webcam. Returns (cap, ip_connected, using_ip)."""
+    ip_cap = open_ip_camera(camera_url)
+    if ip_cap is not None:
+        return ip_cap, True, True
+
+    print("IP camera unavailable; falling back to local webcam")
+    local_cap, index, backend = open_camera(CAMERA_INDEX, FRAME_SIZE)
+    if local_cap is not None:
+        print(f"Local webcam opened: index={index}, backend={backend}")
+        return local_cap, False, False
+
+    print("No camera available")
+    return None, False, False
+
+
+def draw_ip_camera_warning(frame) -> None:
+    text = IP_CAMERA_WARNING_TEXT
+    font = cv.FONT_HERSHEY_SIMPLEX
+    scale = 0.9
+    thickness = 2
+    (text_width, text_height), baseline = cv.getTextSize(text, font, scale, thickness)
+    x = max(20, (FRAME_SIZE - text_width) // 2)
+    y = FRAME_SIZE - 30
+    cv.rectangle(
+        frame,
+        (x - 12, y - text_height - 12),
+        (x + text_width + 12, y + baseline + 8),
+        (0, 0, 0),
+        -1,
+    )
+    cv.putText(frame, text, (x, y), font, scale, (0, 0, 255), thickness)
+
+
+def create_no_camera_frame():
+    frame = np.zeros((FRAME_SIZE, FRAME_SIZE, 3), dtype=np.uint8)
+    draw_ip_camera_warning(frame)
+    return frame
+
+
+def broadcast_camera_status(ip_camera_connected: bool) -> None:
+    ws_broadcast({"ip_camera_connected": ip_camera_connected})
+
+
+def broadcast_positions(
+    blue_marker,
+    red_marker,
+    calib_marker=None,
+    homography=None,
+    ip_camera_connected=True,
+):
+    payload = {"ip_camera_connected": ip_camera_connected}
     if blue_marker is not None:
         bx, by, _ = blue_marker
         bx, by = transform_point(homography, bx, by)
@@ -690,8 +752,7 @@ def broadcast_positions(blue_marker, red_marker, calib_marker=None, homography=N
         cx, cy = transform_point(homography, cx, cy)
         payload["calib_x"] = int(round(cx))
         payload["calib_y"] = int(round(cy))
-    if payload:
-        ws_broadcast(payload)
+    ws_broadcast(payload)
 
 
 def handle_calibration_message(
@@ -823,7 +884,11 @@ def main():
     send_serial_json(ser, to_firmware_settings(game_settings))
 
     current_camera_url = get_camera_url()
-    cap = open_ip_camera(current_camera_url)
+    cap, ip_camera_connected, using_ip_camera = open_camera_with_fallback(
+        current_camera_url
+    )
+    last_camera_status_broadcast = ip_camera_connected
+    broadcast_camera_status(ip_camera_connected)
     cv.namedWindow("Tank Bot Automation", cv.WINDOW_NORMAL)
     cv.resizeWindow("Tank Bot Automation", 1000, 720)
 
@@ -887,6 +952,10 @@ def main():
                     elif msg.get("type") == "UPDATE_SETTINGS":
                         print("Received UPDATE_SETTINGS signal")
                         apply_game_settings_update(msg, ser)
+                    elif msg.get("type") == "RECONNECT_CAMERA":
+                        print(f"Received RECONNECT_CAMERA signal for {current_camera_url}")
+                        release_camera(cap)
+                        cap = None
                     elif msg.get("type") == "ACTIVATE_POWER":
                         power_id = msg.get("power")
                         print(f"Received ACTIVATE_POWER signal: {power_id}")
@@ -900,14 +969,22 @@ def main():
                         "CALIBRATE_FINISH",
                         "CALIBRATE_RESET",
                     ):
-                        calibration, calibration_mode, homography_matrix = (
-                            handle_calibration_message(
-                                msg,
-                                calibration,
-                                calibration_mode,
-                                state.get("latest_red_marker"),
+                        if not ip_camera_connected:
+                            ws_broadcast(
+                                {
+                                    "type": "CALIBRATION_ERROR",
+                                    "message": IP_CAMERA_WARNING_TEXT,
+                                }
                             )
-                        )
+                        else:
+                            calibration, calibration_mode, homography_matrix = (
+                                handle_calibration_message(
+                                    msg,
+                                    calibration,
+                                    calibration_mode,
+                                    state.get("latest_red_marker"),
+                                )
+                            )
                 except Exception as e:
                     print(f"Error parsing inbound message: {e}")
 
@@ -920,26 +997,82 @@ def main():
             new_camera_url = get_camera_url()
             if new_camera_url != current_camera_url:
                 print(f"Camera URL changed: {current_camera_url} -> {new_camera_url}")
-                if cap is not None:
-                    cap.release()
-                    time.sleep(0.5)
+                release_camera(cap)
+                cap = None
+                time.sleep(0.5)
                 current_camera_url = new_camera_url
-                cap = open_ip_camera(current_camera_url)
+                cap, ip_camera_connected, using_ip_camera = open_camera_with_fallback(
+                    current_camera_url
+                )
 
             if cap is None:
-                cap = open_ip_camera(current_camera_url)
-                time.sleep(1.0)
+                cap, ip_camera_connected, using_ip_camera = open_camera_with_fallback(
+                    current_camera_url
+                )
+
+            if last_camera_status_broadcast != ip_camera_connected:
+                broadcast_camera_status(ip_camera_connected)
+                last_camera_status_broadcast = ip_camera_connected
+
+            if cap is None:
+                display_frame = create_no_camera_frame()
+                update_proxy_frame(display_frame)
+                cv.imshow("Tank Bot Automation", display_frame)
+                if cv.waitKey(1) & 0xFF == ord("q"):
+                    break
+                try:
+                    if (
+                        cv.getWindowProperty("Tank Bot Automation", cv.WND_PROP_VISIBLE)
+                        < 1
+                    ):
+                        break
+                except cv.error:
+                    pass
+                time.sleep(0.5)
                 continue
 
             ret, frame = cap.read()
             if not ret or frame is None:
                 print("Camera read failed; retrying...")
-                cap.release()
+                release_camera(cap)
                 cap = None
+                if using_ip_camera:
+                    local_cap, index, backend = open_camera(CAMERA_INDEX, FRAME_SIZE)
+                    if local_cap is not None:
+                        print(
+                            f"IP stream lost; using local webcam "
+                            f"(index={index}, backend={backend})"
+                        )
+                        cap = local_cap
+                        ip_camera_connected = False
+                        using_ip_camera = False
                 time.sleep(0.1)
                 continue
 
             frame = cv.resize(frame, (FRAME_SIZE, FRAME_SIZE))
+
+            if not ip_camera_connected:
+                display_frame = frame.copy()
+                draw_ip_camera_warning(display_frame)
+                update_proxy_frame(display_frame)
+
+                combat_allowed = state.get("gameActive") or state.get("testMode")
+                if ser is not None and state.get("isAutomatedMode") and combat_allowed:
+                    send_stop(ser)
+
+                cv.imshow("Tank Bot Automation", display_frame)
+                if cv.waitKey(1) & 0xFF == ord("q"):
+                    break
+                try:
+                    if (
+                        cv.getWindowProperty("Tank Bot Automation", cv.WND_PROP_VISIBLE)
+                        < 1
+                    ):
+                        break
+                except cv.error:
+                    pass
+                continue
+
             hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
             state["latest_frame"] = frame
             state["latest_hsv"] = hsv
@@ -974,7 +1107,7 @@ def main():
                 None if calibration_mode else homography_matrix
             )
             broadcast_positions(
-                blue_marker, red_marker, None, active_homography
+                blue_marker, red_marker, None, active_homography, ip_camera_connected
             )
 
             display_frame = frame.copy()
@@ -1032,6 +1165,7 @@ def main():
             automation_blocked = (
                 not combat_allowed
                 or (state.get("match_over") and not DEBUG_IGNORE_DEATH)
+                or not ip_camera_connected
             )
 
             if state.get("isAutomatedMode") and not automation_blocked:
@@ -1114,7 +1248,7 @@ def main():
         if ser is not None:
             ser.close()
         if cap is not None:
-            cap.release()
+            release_camera(cap)
         cv.destroyAllWindows()
 
 

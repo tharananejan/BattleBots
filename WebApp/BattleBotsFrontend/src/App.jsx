@@ -150,6 +150,12 @@ const App = () => {
           <BotCard botData={tankBot} />
         </aside>
       </main>
+
+      {telemetry.ip_camera_connected === false && (
+        <div className="camera-warning" role="status" aria-live="polite">
+          IP camera not connected
+        </div>
+      )}
     </div>
   );
 };
