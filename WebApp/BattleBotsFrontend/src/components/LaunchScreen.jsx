@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { unlockAudio, playSound, SOUNDS } from '../utils/soundEffects';
 import '../css/LaunchScreen.css';
-
 const LaunchScreen = ({ onClose, onLaunch, initialMode }) => {
   const [tankName, setTankName] = useState('');
   const [rangeName, setRangeName] = useState('');
@@ -21,15 +21,17 @@ const LaunchScreen = ({ onClose, onLaunch, initialMode }) => {
       return () => clearTimeout(timer);
     }
 
+    playSound(SOUNDS.battleBegins);
+
     const timer = setTimeout(() => {
       onLaunch({ tankName, rangeName, tankMode });
-    }, 1000);
-    return () => clearTimeout(timer);
+    }, 1000);    return () => clearTimeout(timer);
   }, [countdown, onLaunch, tankName, rangeName, tankMode]);
 
   const handleStart = (e) => {
     e.preventDefault();
     if (!tankName.trim() || !rangeName.trim()) return;
+    unlockAudio();
     setCountdown(3);
   };
 

@@ -7,6 +7,7 @@ import LeaderboardModal from './components/LeaderboardModal';
 import DebugPage from './components/DebugPage';
 import CameraFeedModal from './components/CameraFeedModal';
 import { useBattleLogic } from './hooks/useBattleLogic';
+import { useSoundEffects } from './hooks/useSoundEffects';
 import './css/App.css';
 
 const App = () => {
@@ -41,6 +42,14 @@ const App = () => {
     setCalibrationMode,
     tankInLaserGrid,
   } = useBattleLogic('ws://127.0.0.1:8765');
+
+  useSoundEffects({
+    gameState,
+    winner,
+    tankMode: bots?.[1]?.mode ?? 'Manual',
+    rangePowers: bots?.[0]?.powers ?? [],
+    tankPowers: bots?.[1]?.powers ?? [],
+  });
 
   const handleCloseLaunch = useCallback(() => {
     setIsLaunchModalOpen(false);
