@@ -83,6 +83,7 @@ uint8_t tankBotHealth = 100;
 int RANGE_DAMAGE = 5;
 int RANGE_HUMIDITY_DAMAGE = 5;
 int TANK_LASER_DAMAGE = 10;
+int TANK_LASER_GRID_DAMAGE = 3;
 int TANK_IR_DAMAGE = 2;
 int PIEZO_HIT_THRESHOLD = 200;
 unsigned long DAMAGE_DEBOUNCE_MS = 400;
@@ -99,6 +100,7 @@ const unsigned long MATCH_RESET_MS = 5000;
 unsigned long lastRangeDamageMs = 0;
 unsigned long lastRangeHumidityDamageMs = 0;
 unsigned long lastTankLaserDamageMs = 0;
+unsigned long lastTankLaserGridDamageMs = 0;
 unsigned long lastTankIrDamageMs = 0;
 unsigned long lastStateBroadcastMs = 0;
 unsigned long lastSerialStateMs = 0;
@@ -127,6 +129,7 @@ struct DamageDebugFlags {
   bool rangePiezoIr = true;
   bool rangeHumidity = true;
   bool tankLaser = true;
+  bool tankLaserGrid = true;
   bool tankIr = true;
 } damageDebug;
 
@@ -135,6 +138,7 @@ bool combatAllowed() {
 }
 
 void sendAutomationToTankBot();
+void applyTankLaserGridDamage();
 
 bool parseJsonBool(const String &json, const char *key, bool &outVal) {
   String search = String("\"") + key + "\":";
@@ -253,6 +257,7 @@ void applyGameSettings(const String &line) {
   if (parseJsonInt(line, "rPi", v) && v >= 0 && v <= 100) RANGE_DAMAGE = v;
   if (parseJsonInt(line, "rHum", v) && v >= 0 && v <= 100) RANGE_HUMIDITY_DAMAGE = v;
   if (parseJsonInt(line, "tLas", v) && v >= 0 && v <= 100) TANK_LASER_DAMAGE = v;
+  if (parseJsonInt(line, "tLG", v) && v >= 0 && v <= 100) TANK_LASER_GRID_DAMAGE = v;
   if (parseJsonInt(line, "tIr", v) && v >= 0 && v <= 100) TANK_IR_DAMAGE = v;
   if (parseJsonInt(line, "pTh", v) && v >= 0) PIEZO_HIT_THRESHOLD = v;
   if (parseJsonULong(line, "dDb", ul) && ul >= 50 && ul <= 5000) DAMAGE_DEBOUNCE_MS = ul;
@@ -291,6 +296,7 @@ void processSerialJsonLine(const String &line) {
     if (parseJsonBool(line, "rangePiezoIr", v)) damageDebug.rangePiezoIr = v;
     if (parseJsonBool(line, "rangeHumidity", v)) damageDebug.rangeHumidity = v;
     if (parseJsonBool(line, "tankLaser", v)) damageDebug.tankLaser = v;
+    if (parseJsonBool(line, "tankLaserGrid", v)) damageDebug.tankLaserGrid = v;
     if (parseJsonBool(line, "tankIr", v)) damageDebug.tankIr = v;
     Serial.println("Debug damage flags updated");
     return;
@@ -318,6 +324,14 @@ void processSerialJsonLine(const String &line) {
       activatePowerDebug(power);
     } else if (parseJsonString(line, "power", power)) {
       activatePowerDebug(power);
+    }
+    return;
+  }
+
+  if (line.indexOf("LASER_GRID_HIT") >= 0) {
+    bool v;
+    if (parseJsonBool(line, "LASER_GRID_HIT", v) && v) {
+      applyTankLaserGridDamage();
     }
     return;
   }
@@ -399,6 +413,21 @@ void applyRangeDamage(const RangeBotTelemetry &t) {
   }
 }
 
+void applyTankLaserGridDamage() {
+  if (!combatAllowed() || tankBotHealth == 0) return;
+
+  if (damageDebug.tankLaserGrid && (millis() - lastTankLaserGridDamageMs >= DAMAGE_DEBOUNCE_MS)) {
+    lastTankLaserGridDamageMs = millis();
+    if (tankBotHealth > TANK_LASER_GRID_DAMAGE) {
+      tankBotHealth -= TANK_LASER_GRID_DAMAGE;
+    } else {
+      tankBotHealth = 0;
+    }
+    Serial.print("TankBot laser grid damage -> health ");
+    Serial.println(tankBotHealth);
+  }
+}
+
 void applyTankDamage(const TankBotTelemetry &t) {
   if (!combatAllowed() || tankBotHealth == 0) return;
 
@@ -453,6 +482,8 @@ void printCombinedStateJson() {
   Serial.print(damageDebug.rangeHumidity ? "true" : "false");
   Serial.print(",\"tankLaser\":");
   Serial.print(damageDebug.tankLaser ? "true" : "false");
+  Serial.print(",\"tankLaserGrid\":");
+  Serial.print(damageDebug.tankLaserGrid ? "true" : "false");
   Serial.print(",\"tankIr\":");
   Serial.print(damageDebug.tankIr ? "true" : "false");
   Serial.print("}");

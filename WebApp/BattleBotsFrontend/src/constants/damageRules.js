@@ -5,6 +5,7 @@ import { DEFAULT_GAME_SETTINGS } from './gameSettings';
 export const RANGE_DAMAGE = DEFAULT_GAME_SETTINGS.damage.rangePiezoIr;
 export const RANGE_HUMIDITY_DAMAGE = DEFAULT_GAME_SETTINGS.damage.rangeHumidity;
 export const TANK_LASER_DAMAGE = DEFAULT_GAME_SETTINGS.damage.tankLaser;
+export const TANK_LASER_GRID_DAMAGE = DEFAULT_GAME_SETTINGS.damage.tankLaserGrid;
 export const TANK_IR_DAMAGE = DEFAULT_GAME_SETTINGS.damage.tankIr;
 export const PIEZO_HIT_THRESHOLD = DEFAULT_GAME_SETTINGS.damage.piezoHitThreshold;
 
@@ -82,6 +83,7 @@ export const DEFAULT_DEBUG_DAMAGE = {
   rangePiezoIr: true,
   rangeHumidity: true,
   tankLaser: true,
+  tankLaserGrid: true,
   tankIr: true,
 };
 
@@ -116,6 +118,15 @@ export function buildDebugDamagePaths(settings = DEFAULT_GAME_SETTINGS) {
       method: 'applyTankDamage (laser)',
     },
     {
+      id: 'tankLaserGrid',
+      label: 'Laser Grid Zone',
+      bot: 'Tank Bot',
+      botColor: 'blue',
+      flagKey: 'tankLaserGrid',
+      damageAmount: damage.tankLaserGrid,
+      method: 'applyTankLaserGridDamage',
+    },
+    {
       id: 'tankIr',
       label: 'IR Proximity Hit',
       bot: 'Tank Bot',
@@ -129,14 +140,28 @@ export function buildDebugDamagePaths(settings = DEFAULT_GAME_SETTINGS) {
 
 export const DEBUG_DAMAGE_PATHS = buildDebugDamagePaths();
 
-export function inferTankDamageCause(telemetry, damageAmount, settings = DEFAULT_GAME_SETTINGS) {
+export function inferTankDamageCause(
+  telemetry,
+  damageAmount,
+  settings = DEFAULT_GAME_SETTINGS,
+  options = {}
+) {
   const damage = settings.damage;
   const { d1, ir1, ir2 } = telemetry;
+  const { tankInLaserGrid = false } = options;
   const laserBroken = d1 === 0;
   const irSensors = [];
   if (ir1 === 1) irSensors.push('ir1');
   if (ir2 === 1) irSensors.push('ir2');
   const irActive = irSensors.length > 0;
+
+  if (tankInLaserGrid && damageAmount >= damage.tankLaserGrid) {
+    return {
+      source: 'Laser Grid Zone',
+      method: 'applyTankLaserGridDamage',
+      sensors: ['blue_x, blue_y (position overlap)'],
+    };
+  }
 
   // Priority 1: active sensor state (works even when HP clamps or hits batch)
   if (laserBroken && irActive) {

@@ -26,6 +26,7 @@ DEFAULT_GAME_SETTINGS = {
         "rangePiezoIr": 5,
         "rangeHumidity": 5,
         "tankLaser": 10,
+        "tankLaserGrid": 3,
         "tankIr": 2,
         "piezoHitThreshold": 200,
         "damageDebounceMs": 400,
@@ -285,6 +286,7 @@ def to_firmware_settings(settings: dict) -> dict:
         "rPi": damage["rangePiezoIr"],
         "rHum": damage["rangeHumidity"],
         "tLas": damage["tankLaser"],
+        "tLG": damage["tankLaserGrid"],
         "tIr": damage["tankIr"],
         "pTh": damage["piezoHitThreshold"],
         "dDb": damage["damageDebounceMs"],
@@ -877,6 +879,8 @@ def main():
                     elif msg.get("type") == "DEBUG_DAMAGE":
                         print("Received DEBUG_DAMAGE signal:", msg)
                         send_serial_json(ser, msg)
+                    elif msg.get("type") == "LASER_GRID_HIT":
+                        send_serial_json(ser, {"LASER_GRID_HIT": True})
                     elif msg.get("type") == "SET_MODE":
                         print("Received SET_MODE signal:", msg)
                         send_serial_json(ser, msg)

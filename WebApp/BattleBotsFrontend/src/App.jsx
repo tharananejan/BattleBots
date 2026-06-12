@@ -39,6 +39,7 @@ const App = () => {
     calibration,
     sendCalibrationMessage,
     setCalibrationMode,
+    tankInLaserGrid,
   } = useBattleLogic('ws://127.0.0.1:8765');
 
   const handleCloseLaunch = useCallback(() => {
@@ -114,6 +115,7 @@ const App = () => {
           gameSettings={gameSettings}
           updateGameSettings={updateGameSettings}
           activatePowerManually={activatePowerManually}
+          tankInLaserGrid={tankInLaserGrid}
           onClose={() => setIsDebugOpen(false)}
         />
       )}
@@ -133,7 +135,7 @@ const App = () => {
           <BotCard botData={rangeBot} />
         </aside>
         <section className="arena-center">
-          <Arena bots={bots} />
+          <Arena bots={bots} tankInLaserGrid={tankInLaserGrid} />
         </section>
         <aside className="side-panel">
           <BotCard botData={tankBot} />

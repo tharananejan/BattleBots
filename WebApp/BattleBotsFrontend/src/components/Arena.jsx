@@ -1,8 +1,13 @@
 import React from 'react';
 import BotMarker from './BotMarker';
+import {
+  LASER_BEAM_Y_FRACTIONS,
+  LASER_BEAM_HEIGHT,
+  isPointInLaserBand,
+} from '../constants/laserGrid';
 import '../css/Arena.css';
 
-const Arena = ({ bots }) => {
+const Arena = ({ bots, tankInLaserGrid = false }) => {
   const FRAME_SIZE = 720;
 
   // Retrieve active ultimate ability status flags dynamically from bots state
@@ -16,6 +21,10 @@ const Arena = ({ bots }) => {
   const isFanActive = fanPower?.status === 'running';
   const isLaserActive = laserPower?.status === 'running';
   const isHumidifierActive = humidifierPower?.status === 'running';
+  const tankInGrid =
+    isLaserActive &&
+    tankBot &&
+    isPointInLaserBand(tankBot.x, tankBot.y, FRAME_SIZE);
 
   return (
     <div className="arena-wrapper">
@@ -40,10 +49,18 @@ const Arena = ({ bots }) => {
 
         {/* Three horizontal laser beams when Range Bot laser power is active */}
         {isLaserActive && (
-          <div className="laser-beams-container">
-            <div className="laser-beam"></div>
-            <div className="laser-beam"></div>
-            <div className="laser-beam"></div>
+          <div
+            className={`laser-beams-container ${tankInGrid || tankInLaserGrid ? 'in-grid' : ''}`}
+          >
+            {LASER_BEAM_Y_FRACTIONS.map((frac, index) => (
+              <div
+                key={index}
+                className="laser-beam"
+                style={{
+                  top: `calc(${frac * 100}% - ${LASER_BEAM_HEIGHT / 2}px)`,
+                }}
+              />
+            ))}
           </div>
         )}
 

@@ -365,18 +365,23 @@ body.light-theme .connection-status {
 .laser-beams-container {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: stretch;
-  gap: 18%;
   padding: 0 12px;
   z-index: 7;
   pointer-events: none;
 }
 
+.laser-beams-container.in-grid .laser-beam {
+  box-shadow:
+    0 0 10px #fbbf24,
+    0 0 20px rgba(251, 191, 36, 0.9),
+    0 0 36px rgba(239, 68, 68, 0.85);
+}
+
 .laser-beam {
-  width: 100%;
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  width: auto;
   height: 6px;
   background: linear-gradient(
     90deg,

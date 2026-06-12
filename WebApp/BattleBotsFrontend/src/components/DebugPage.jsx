@@ -24,13 +24,20 @@ const SHORT_DAMAGE_LABELS = {
   rangePiezoIr: 'Piezo / IR',
   rangeHumidity: 'Humidity',
   tankLaser: 'Laser',
+  tankLaserGrid: 'Laser Grid',
   tankIr: 'IR Proximity',
   piezoHitThreshold: 'Piezo Limit',
   hallFreezeThreshold: 'Hall Limit',
   tankFreezeDurationMs: 'Freeze Time',
 };
 
-const TANK_DAMAGE_KEYS = ['tankLaser', 'tankIr', 'hallFreezeThreshold', 'tankFreezeDurationMs'];
+const TANK_DAMAGE_KEYS = [
+  'tankLaser',
+  'tankLaserGrid',
+  'tankIr',
+  'hallFreezeThreshold',
+  'tankFreezeDurationMs',
+];
 const RANGE_DAMAGE_KEYS = ['rangePiezoIr', 'rangeHumidity', 'piezoHitThreshold'];
 
 function formatTime(date) {
@@ -149,6 +156,7 @@ const DebugPage = ({
   gameSettings,
   updateGameSettings,
   activatePowerManually,
+  tankInLaserGrid = false,
   onClose,
 }) => {
   const [damageLog, setDamageLog] = useState([]);
@@ -204,7 +212,9 @@ const DebugPage = ({
 
     if (tankHp < prev.tank) {
       const damage = prev.tank - tankHp;
-      const cause = inferTankDamageCause(telemetry, damage, gameSettings);
+      const cause = inferTankDamageCause(telemetry, damage, gameSettings, {
+        tankInLaserGrid,
+      });
       entries.push({
         id: `${Date.now()}-tank-${damage}`,
         time: formatTime(new Date()),
@@ -221,7 +231,7 @@ const DebugPage = ({
     }
 
     prevHealthRef.current = { range: rangeHp, tank: tankHp };
-  }, [rangeBot, tankBot, telemetry, gameSettings]);
+  }, [rangeBot, tankBot, telemetry, gameSettings, tankInLaserGrid]);
 
   const hallTriggered = connected && telemetry.hall < hallThreshold;
   const tankFrozen = tankBot?.isFrozen ?? false;

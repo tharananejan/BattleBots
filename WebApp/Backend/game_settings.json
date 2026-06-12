@@ -3,6 +3,7 @@
     "rangePiezoIr": 5,
     "rangeHumidity": 5,
     "tankLaser": 10,
+    "tankLaserGrid": 3,
     "tankIr": 2,
     "piezoHitThreshold": 200,
     "damageDebounceMs": 400,

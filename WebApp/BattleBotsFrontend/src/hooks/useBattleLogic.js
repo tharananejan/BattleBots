@@ -5,6 +5,7 @@ import {
   applyPowerTimings,
 } from '../constants/botPowers';
 import { DEFAULT_DEBUG_DAMAGE } from '../constants/damageRules';
+import { isPointInLaserBand } from '../constants/laserGrid';
 import {
   DEFAULT_GAME_SETTINGS,
   mergeGameSettings,
@@ -146,6 +147,7 @@ export const useBattleLogic = (url) => {
   const [debugDamage, setDebugDamage] = useState(DEFAULT_DEBUG_DAMAGE);
   const [gameSettings, setGameSettings] = useState(DEFAULT_GAME_SETTINGS);
   const [calibration, setCalibration] = useState(INITIAL_CALIBRATION);
+  const [tankInLaserGrid, setTankInLaserGrid] = useState(false);
 
   const isLockedRef = useRef(false);
   const hallFreezeTriggeredRef = useRef(false);
@@ -178,6 +180,7 @@ export const useBattleLogic = (url) => {
     setTankPowers(initTankPowers(gameSettingsRef.current));
     setTankMode('Manual');
     setTankFrozenUntil(0);
+    setTankInLaserGrid(false);
     setBattleStarted(false);
     setGameState('ACTIVE');
     setWinner(null);
@@ -411,6 +414,35 @@ export const useBattleLogic = (url) => {
     }
   }, []);
 
+  const sendLaserGridHit = useCallback(() => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'LASER_GRID_HIT' }));
+    }
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (gameStateRef.current !== 'ACTIVE' || !isCombatActive()) {
+        setTankInLaserGrid(false);
+        return;
+      }
+
+      const laserRunning = rangePowers.some(
+        (p) => p.id === 'laser' && p.status === 'running'
+      );
+      const inBand =
+        laserRunning &&
+        isPointInLaserBand(telemetry.blue_x, telemetry.blue_y, FRAME_SIZE);
+
+      setTankInLaserGrid(inBand);
+
+      if (inBand && debugDamage.tankLaserGrid !== false) {
+        sendLaserGridHit();
+      }
+    }, TICK_MS);
+    return () => clearInterval(interval);
+  }, [telemetry.blue_x, telemetry.blue_y, rangePowers, debugDamage, sendLaserGridHit]);
+
   const setDebugDamagePath = useCallback(
     (pathId, enabled) => {
       setDebugDamage((prev) => {
@@ -570,5 +602,6 @@ export const useBattleLogic = (url) => {
     calibration,
     sendCalibrationMessage,
     setCalibrationMode,
+    tankInLaserGrid,
   };
 };
