@@ -33,7 +33,7 @@ const int VRy1 = 16;
 const int joySW1 = 11;
 // Push buttons (For sending commands)
 const int btn1 = 6;
-const int btn2 = 5;
+const int btn2 = 5; //Humididfier
 
 // --- Manual / Automated mode (btn2 hold 5s) ---
 const unsigned long MODE_HOLD_MS = 5000;
