@@ -12,8 +12,8 @@ import {
 } from '../constants/gameSettings';
 
 const INITIAL_POSITIONS = {
-  red: { x: 120, y: 240 },
-  blue: { x: 360, y: 240 },
+  red: { x: 180, y: 360 },
+  blue: { x: 540, y: 360 },
 };
 
 const initialTelemetry = {
@@ -26,7 +26,22 @@ const initialTelemetry = {
   blue_y: INITIAL_POSITIONS.blue.y,
   red_x: INITIAL_POSITIONS.red.x,
   red_y: INITIAL_POSITIONS.red.y,
+  calib_x: null,
+  calib_y: null,
   connected: false,
+};
+
+const INITIAL_CALIBRATION = {
+  calibrationMode: false,
+  corners: {
+    top_left: false,
+    top_right: false,
+    bottom_right: false,
+    bottom_left: false,
+  },
+  homographyReady: false,
+  lastError: null,
+  lastMessage: null,
 };
 
 const TICK_MS = 100;
@@ -130,13 +145,14 @@ export const useBattleLogic = (url) => {
   const [winner, setWinner] = useState(null);
   const [debugDamage, setDebugDamage] = useState(DEFAULT_DEBUG_DAMAGE);
   const [gameSettings, setGameSettings] = useState(DEFAULT_GAME_SETTINGS);
+  const [calibration, setCalibration] = useState(INITIAL_CALIBRATION);
 
   const isLockedRef = useRef(false);
   const hallFreezeTriggeredRef = useRef(false);
   const battleStartedRef = useRef(false);
   const testModeRef = useRef(false);
   const gameSettingsRef = useRef(DEFAULT_GAME_SETTINGS);
-  const FRAME_SIZE = 480;
+  const FRAME_SIZE = 720;
 
   const socketRef = useRef(null);
 
@@ -227,6 +243,57 @@ export const useBattleLogic = (url) => {
 
         if (data.type === 'GAME_SETTINGS' && data.settings) {
           setGameSettings(mergeGameSettings(data.settings));
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_STATUS') {
+          setCalibration((prev) => ({
+            ...prev,
+            calibrationMode: Boolean(data.calibration_mode),
+            corners: data.corners || prev.corners,
+            homographyReady: Boolean(data.homography_ready),
+            lastError: null,
+          }));
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_POINT_CAPTURED') {
+          setCalibration((prev) => ({
+            ...prev,
+            corners: {
+              ...prev.corners,
+              [data.corner]: true,
+            },
+            lastMessage: `Captured ${String(data.corner).replace(/_/g, ' ')}`,
+            lastError: null,
+          }));
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_FINISHED') {
+          setCalibration((prev) => ({
+            ...prev,
+            calibrationMode: false,
+            homographyReady: true,
+            lastMessage: 'Calibration complete — bird\'s-eye view active',
+            lastError: null,
+          }));
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_RESET') {
+          setCalibration({
+            ...INITIAL_CALIBRATION,
+            lastMessage: 'Calibration reset',
+          });
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_ERROR') {
+          setCalibration((prev) => ({
+            ...prev,
+            lastError: data.message || 'Calibration error',
+          }));
           return;
         }
 
@@ -375,6 +442,27 @@ export const useBattleLogic = (url) => {
     }
   }, []);
 
+  const sendCalibrationMessage = useCallback((payload) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(payload));
+    }
+  }, []);
+
+  const setCalibrationMode = useCallback(
+    (enabled) => {
+      setCalibration((prev) => ({
+        ...prev,
+        calibrationMode: enabled,
+        lastError: null,
+        lastMessage: enabled
+          ? 'Calibration mode enabled — place the range bot at each corner'
+          : null,
+      }));
+      sendCalibrationMessage({ type: 'SET_CALIBRATION_MODE', enabled });
+    },
+    [sendCalibrationMessage]
+  );
+
   useEffect(() => {
     if (gameState === 'GAMEOVER') {
       const timer = setTimeout(() => resetGame(), 5000);
@@ -479,5 +567,8 @@ export const useBattleLogic = (url) => {
     gameSettings,
     updateGameSettings,
     activatePowerManually,
+    calibration,
+    sendCalibrationMessage,
+    setCalibrationMode,
   };
 };

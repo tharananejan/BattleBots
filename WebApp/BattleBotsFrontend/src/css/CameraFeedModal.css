@@ -29,7 +29,7 @@ body.light-theme .camera-feed-overlay {
   display: flex;
   flex-direction: column;
   padding: 2rem;
-  overflow: hidden;
+  overflow-y: auto;
   animation: containerScaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: 'Outfit', sans-serif;
   transition: all 0.3s ease;
@@ -208,9 +208,10 @@ body.light-theme .camera-feed-input {
 }
 
 .camera-feed-preview {
-  flex: 1;
-  min-height: 400px;
-  max-height: 75vh;
+  flex: 0 0 auto;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  min-height: 500px;
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -258,5 +259,277 @@ body.light-theme .camera-feed-preview {
 
   .camera-feed-update-btn {
     width: 100%;
+  }
+}
+
+.camera-feed-calibration {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+body.light-theme .camera-feed-calibration {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(22, 163, 74, 0.25);
+}
+
+.camera-feed-calibration-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.camera-feed-calibration-title {
+  margin: 0 0 0.35rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #22c55e;
+}
+
+.camera-feed-calibration-desc {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+body.light-theme .camera-feed-calibration-desc {
+  color: #64748b;
+}
+
+.camera-feed-calibration-toggle {
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  background: transparent;
+  color: #22c55e;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.camera-feed-calibration-toggle.active,
+.camera-feed-calibration-toggle:hover {
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.camera-feed-calibration-steps {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.calibration-step {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  padding: 0.85rem;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+body.light-theme .calibration-step {
+  background: rgba(255, 255, 255, 0.65);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.calibration-step-number {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.calibration-step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.calibration-step-content strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.85rem;
+  color: #e2e8f0;
+}
+
+body.light-theme .calibration-step-content strong {
+  color: #1e293b;
+}
+
+.calibration-step-content p {
+  margin: 0 0 0.65rem;
+  font-size: 0.82rem;
+  color: #94a3b8;
+}
+
+.calibration-action-btn,
+.calibration-corner-btn,
+.calibration-finish-btn,
+.calibration-reset-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.calibration-action-btn {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.calibration-action-btn.active {
+  background: rgba(34, 197, 94, 0.28);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+}
+
+.calibration-action-btn:disabled,
+.calibration-corner-btn:disabled,
+.calibration-finish-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.calibration-badge {
+  display: inline-block;
+  margin-left: 0.65rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.calibration-badge--ok {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.calibration-corner-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.65rem;
+}
+
+.calibration-corner-btn {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+}
+
+.calibration-corner-btn.captured {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+body.light-theme .calibration-corner-btn {
+  background: rgba(0, 0, 0, 0.03);
+  color: #334155;
+}
+
+.calibration-marker-status {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.calibration-finish-row {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.calibration-finish-btn {
+  padding: 0.6rem 1rem;
+  border: none;
+  background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+  color: #fff;
+}
+
+.calibration-reset-btn {
+  padding: 0.6rem 1rem;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: transparent;
+  color: #f87171;
+}
+
+.camera-feed-calibration-feedback {
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.camera-feed-calibration-feedback.success {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.camera-feed-calibration-feedback.error {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+}
+
+.camera-feed-stream--pick {
+  cursor: crosshair;
+}
+
+.camera-feed-pick-hint {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.92);
+  color: #052e16;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@media (max-width: 700px) {
+  .camera-feed-calibration-header {
+    flex-direction: column;
+  }
+
+  .camera-feed-calibration-toggle {
+    width: 100%;
+  }
+
+  .calibration-corner-grid {
+    grid-template-columns: 1fr;
   }
 }

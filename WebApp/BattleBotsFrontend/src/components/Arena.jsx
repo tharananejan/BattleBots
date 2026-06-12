@@ -3,7 +3,7 @@ import BotMarker from './BotMarker';
 import '../css/Arena.css';
 
 const Arena = ({ bots }) => {
-  const FRAME_SIZE = 480;
+  const FRAME_SIZE = 720;
 
   // Retrieve active ultimate ability status flags dynamically from bots state
   const rangeBot = bots?.find((b) => b.color === 'red');

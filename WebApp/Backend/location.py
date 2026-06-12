@@ -16,6 +16,10 @@ import websockets
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GAME_SETTINGS_PATH = os.path.join(SCRIPT_DIR, "game_settings.json")
+CALIBRATION_PATH = os.path.join(SCRIPT_DIR, "calibration.json")
+
+CORNER_KEYS = ("top_left", "top_right", "bottom_right", "bottom_left")
+MIN_CORNER_AREA = 1000
 
 DEFAULT_GAME_SETTINGS = {
     "damage": {
@@ -74,6 +78,144 @@ serial_buffer = ""
 game_settings = copy.deepcopy(DEFAULT_GAME_SETTINGS)
 latest_jpeg_frame: bytes | None = None
 jpeg_lock = threading.Lock()
+
+DEFAULT_CALIBRATION = {
+    "corners": {},
+    "homography": None,
+}
+
+
+def corner_dst_points() -> np.ndarray:
+    size = FRAME_SIZE - 1
+    return np.array(
+        [
+            [0, 0],
+            [size, 0],
+            [size, size],
+            [0, size],
+        ],
+        dtype=np.float32,
+    )
+
+
+def corners_valid(corners: dict) -> bool:
+    """Reject missing, out-of-bounds, duplicate, or near-degenerate corner sets."""
+    if not all(key in corners for key in CORNER_KEYS):
+        return False
+
+    points = []
+    for key in CORNER_KEYS:
+        corner = corners.get(key) or {}
+        x = corner.get("x")
+        y = corner.get("y")
+        if x is None or y is None:
+            return False
+        if not (0 <= float(x) < FRAME_SIZE and 0 <= float(y) < FRAME_SIZE):
+            return False
+        points.append((float(x), float(y)))
+
+    if len(set(points)) < 4:
+        return False
+
+    src = np.array(points, dtype=np.float32).reshape(-1, 1, 2)
+    area = abs(float(cv.contourArea(src)))
+    return area >= MIN_CORNER_AREA
+
+
+def homography_matrix_valid(matrix: np.ndarray | None) -> bool:
+    if matrix is None:
+        return False
+    if not np.all(np.isfinite(matrix)):
+        return False
+    return abs(float(np.linalg.det(matrix))) >= 1e-6
+
+
+def sanitize_calibration(calibration: dict) -> dict:
+    """Drop invalid saved corners/homography so the raw camera feed always works."""
+    sanitized = copy.deepcopy(calibration)
+    corners = sanitized.get("corners") or {}
+    if not isinstance(corners, dict) or not corners_valid(corners):
+        sanitized["corners"] = {}
+        sanitized["homography"] = None
+        return sanitized
+
+    if sanitized.get("homography") is not None:
+        try:
+            matrix = np.array(sanitized["homography"], dtype=np.float32)
+            if not homography_matrix_valid(matrix):
+                sanitized["homography"] = None
+        except Exception:
+            sanitized["homography"] = None
+
+    return sanitized
+
+
+def load_calibration() -> dict:
+    if os.path.exists(CALIBRATION_PATH):
+        try:
+            with open(CALIBRATION_PATH, encoding="utf-8") as calibration_file:
+                data = json.load(calibration_file)
+                merged = copy.deepcopy(DEFAULT_CALIBRATION)
+                if isinstance(data.get("corners"), dict):
+                    merged["corners"] = data["corners"]
+                if data.get("homography") is not None:
+                    merged["homography"] = data["homography"]
+                sanitized = sanitize_calibration(merged)
+                if sanitized != merged:
+                    print("Discarded invalid calibration data from disk")
+                return sanitized
+        except Exception as error:
+            print(f"Failed to load calibration: {error}")
+    return copy.deepcopy(DEFAULT_CALIBRATION)
+
+
+def save_calibration(calibration: dict) -> None:
+    try:
+        with open(CALIBRATION_PATH, "w", encoding="utf-8") as calibration_file:
+            json.dump(calibration, calibration_file, indent=2)
+            calibration_file.write("\n")
+    except Exception as error:
+        print(f"Failed to save calibration: {error}")
+
+
+def homography_from_calibration(calibration: dict) -> np.ndarray | None:
+    corners = calibration.get("corners") or {}
+    if not corners_valid(corners):
+        return None
+
+    src = np.array(
+        [
+            [corners["top_left"]["x"], corners["top_left"]["y"]],
+            [corners["top_right"]["x"], corners["top_right"]["y"]],
+            [corners["bottom_right"]["x"], corners["bottom_right"]["y"]],
+            [corners["bottom_left"]["x"], corners["bottom_left"]["y"]],
+        ],
+        dtype=np.float32,
+    )
+    matrix = cv.getPerspectiveTransform(src, corner_dst_points())
+    if not homography_matrix_valid(matrix):
+        return None
+    return matrix
+
+
+def transform_point(homography: np.ndarray | None, x: float, y: float) -> tuple[float, float]:
+    if homography is None:
+        return x, y
+    point = np.array([[[float(x), float(y)]]], dtype=np.float32)
+    transformed = cv.perspectiveTransform(point, homography)
+    return float(transformed[0, 0, 0]), float(transformed[0, 0, 1])
+
+
+def calibration_status_payload(calibration: dict, calibration_mode: bool) -> dict:
+    corners = calibration.get("corners") or {}
+    homography_ready = calibration.get("homography") is not None and corners_valid(corners)
+    return {
+        "type": "CALIBRATION_STATUS",
+        "calibration_mode": calibration_mode,
+        "color_calibrated": True,
+        "corners": {key: key in corners for key in CORNER_KEYS},
+        "homography_ready": homography_ready,
+    }
 
 
 def merge_game_settings(partial: dict | None) -> dict:
@@ -195,6 +337,10 @@ async def _ws_server(clients: set) -> None:
         try:
             await websocket.send(
                 json.dumps({"type": "GAME_SETTINGS", "settings": game_settings})
+            )
+            calibration = load_calibration()
+            await websocket.send(
+                json.dumps(calibration_status_payload(calibration, False))
             )
             async for message in websocket:
                 inbound_queue.put(message)
@@ -525,18 +671,128 @@ def open_camera(preferred_index, frame_size):
     return None, None, None
 
 
-def broadcast_positions(blue_marker, red_marker):
+def broadcast_positions(blue_marker, red_marker, calib_marker=None, homography=None):
     payload = {}
     if blue_marker is not None:
         bx, by, _ = blue_marker
-        payload["blue_x"] = bx
-        payload["blue_y"] = by
+        bx, by = transform_point(homography, bx, by)
+        payload["blue_x"] = int(round(bx))
+        payload["blue_y"] = int(round(by))
     if red_marker is not None:
         rx, ry, _ = red_marker
-        payload["red_x"] = rx
-        payload["red_y"] = ry
+        rx, ry = transform_point(homography, rx, ry)
+        payload["red_x"] = int(round(rx))
+        payload["red_y"] = int(round(ry))
+    if calib_marker is not None:
+        cx, cy, _ = calib_marker
+        cx, cy = transform_point(homography, cx, cy)
+        payload["calib_x"] = int(round(cx))
+        payload["calib_y"] = int(round(cy))
     if payload:
         ws_broadcast(payload)
+
+
+def handle_calibration_message(
+    msg: dict,
+    calibration: dict,
+    calibration_mode: bool,
+    target_marker,
+) -> tuple[dict, bool, np.ndarray | None]:
+    """Process calibration WS messages. Returns (calibration, calibration_mode, homography)."""
+    msg_type = msg.get("type")
+    homography = homography_from_calibration(calibration)
+
+    if msg_type == "SET_CALIBRATION_MODE":
+        calibration_mode = bool(msg.get("enabled", False))
+        print(f"Calibration mode: {calibration_mode}")
+        ws_broadcast(calibration_status_payload(calibration, calibration_mode))
+        return calibration, calibration_mode, homography
+
+    if msg_type == "CALIBRATE_POINT":
+        corner = msg.get("corner")
+        if corner not in CORNER_KEYS:
+            ws_broadcast(
+                {
+                    "type": "CALIBRATION_ERROR",
+                    "message": f"Invalid corner: {corner}",
+                }
+            )
+            return calibration, calibration_mode, homography
+
+        if target_marker is None:
+            ws_broadcast(
+                {
+                    "type": "CALIBRATION_ERROR",
+                    "message": "Target (range bot) not detected — place it in view and try again",
+                }
+            )
+            return calibration, calibration_mode, homography
+
+        cx, cy, _ = target_marker
+        calibration.setdefault("corners", {})[corner] = {"x": cx, "y": cy}
+        save_calibration(calibration)
+        print(f"Captured corner {corner} from target at ({cx}, {cy})")
+        ws_broadcast(
+            {
+                "type": "CALIBRATION_POINT_CAPTURED",
+                "corner": corner,
+                "x": cx,
+                "y": cy,
+            }
+        )
+        ws_broadcast(calibration_status_payload(calibration, calibration_mode))
+        return calibration, calibration_mode, homography
+
+    if msg_type == "CALIBRATE_FINISH":
+        corners = calibration.get("corners") or {}
+        missing = [key for key in CORNER_KEYS if key not in corners]
+        if missing:
+            ws_broadcast(
+                {
+                    "type": "CALIBRATION_ERROR",
+                    "message": f"Missing corners: {', '.join(missing)}",
+                }
+            )
+            return calibration, calibration_mode, homography
+
+        if not corners_valid(corners):
+            ws_broadcast(
+                {
+                    "type": "CALIBRATION_ERROR",
+                    "message": "Invalid corners — points must be distinct and within the camera frame",
+                }
+            )
+            return calibration, calibration_mode, homography
+
+        matrix = homography_from_calibration(calibration)
+        if matrix is None or not homography_matrix_valid(matrix):
+            ws_broadcast(
+                {
+                    "type": "CALIBRATION_ERROR",
+                    "message": "Failed to compute a valid perspective transform",
+                }
+            )
+            return calibration, calibration_mode, homography
+
+        calibration["homography"] = matrix.tolist()
+        save_calibration(calibration)
+        calibration_mode = False
+        homography = matrix
+        print("Calibration finished — homography saved")
+        ws_broadcast({"type": "CALIBRATION_FINISHED"})
+        ws_broadcast(calibration_status_payload(calibration, calibration_mode))
+        return calibration, calibration_mode, homography
+
+    if msg_type == "CALIBRATE_RESET":
+        calibration = copy.deepcopy(DEFAULT_CALIBRATION)
+        save_calibration(calibration)
+        homography = None
+        print("Calibration reset")
+        ws_broadcast({"type": "CALIBRATION_RESET"})
+        ws_broadcast(calibration_status_payload(calibration, calibration_mode))
+        return calibration, calibration_mode, homography
+
+    return calibration, calibration_mode, homography
 
 
 def apply_game_settings_update(msg: dict, ser) -> None:
@@ -573,6 +829,19 @@ def main():
     angle_offset = 0.0
     needs_calibration = False
     last_attack_ts = 0.0
+
+    calibration = load_calibration()
+    homography_matrix = None
+    if calibration.get("homography"):
+        try:
+            homography_matrix = np.array(calibration["homography"], dtype=np.float32)
+            if not homography_matrix_valid(homography_matrix):
+                homography_matrix = None
+        except Exception:
+            homography_matrix = None
+    if homography_matrix is None:
+        homography_matrix = homography_from_calibration(calibration)
+    calibration_mode = False
 
     state = {
         "isAutomatedMode": False,
@@ -621,6 +890,20 @@ def main():
                             ws_broadcast({"power_activated": "dodge"})
                         elif power_id:
                             send_serial_json(ser, {"ACTIVATE_POWER": power_id})
+                    elif msg.get("type") in (
+                        "SET_CALIBRATION_MODE",
+                        "CALIBRATE_POINT",
+                        "CALIBRATE_FINISH",
+                        "CALIBRATE_RESET",
+                    ):
+                        calibration, calibration_mode, homography_matrix = (
+                            handle_calibration_message(
+                                msg,
+                                calibration,
+                                calibration_mode,
+                                state.get("latest_red_marker"),
+                            )
+                        )
                 except Exception as e:
                     print(f"Error parsing inbound message: {e}")
 
@@ -652,9 +935,10 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            update_proxy_frame(frame)
-
+            frame = cv.resize(frame, (FRAME_SIZE, FRAME_SIZE))
             hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+            state["latest_frame"] = frame
+            state["latest_hsv"] = hsv
 
             lower_blue = np.array([90, 100, 50])
             upper_blue = np.array([150, 255, 255])
@@ -670,6 +954,7 @@ def main():
 
             blue_marker = find_tracked_marker(mask_blue, state.get("last_blue_pos"))
             red_marker = find_tracked_marker(mask_red, state.get("last_red_pos"))
+            state["latest_red_marker"] = red_marker
 
             if blue_marker is not None:
                 state["last_blue_pos"] = (blue_marker[0], blue_marker[1])
@@ -680,14 +965,22 @@ def main():
                 state["last_red_pos"] = (red_marker[0], red_marker[1])
             else:
                 state["last_red_pos"] = None
-            broadcast_positions(blue_marker, red_marker)
+
+            active_homography = (
+                None if calibration_mode else homography_matrix
+            )
+            broadcast_positions(
+                blue_marker, red_marker, None, active_homography
+            )
+
+            display_frame = frame.copy()
 
             if blue_marker is not None:
                 bx, by, br = blue_marker
-                cv.circle(frame, (bx, by), br, (255, 0, 0), 2)
-                cv.circle(frame, (bx, by), 5, (0, 0, 255), -1)
+                cv.circle(display_frame, (bx, by), br, (255, 0, 0), 2)
+                cv.circle(display_frame, (bx, by), 5, (0, 0, 255), -1)
                 cv.putText(
-                    frame,
+                    display_frame,
                     f"TANK ({bx},{by})",
                     (bx + 10, by - 10),
                     cv.FONT_HERSHEY_SIMPLEX,
@@ -698,10 +991,10 @@ def main():
 
             if red_marker is not None:
                 rx, ry, rr = red_marker
-                cv.circle(frame, (rx, ry), rr, (0, 0, 255), 2)
-                cv.circle(frame, (rx, ry), 5, (255, 255, 255), -1)
+                cv.circle(display_frame, (rx, ry), rr, (0, 0, 255), 2)
+                cv.circle(display_frame, (rx, ry), 5, (255, 255, 255), -1)
                 cv.putText(
-                    frame,
+                    display_frame,
                     f"TARGET ({rx},{ry})",
                     (rx + 10, ry - 10),
                     cv.FONT_HERSHEY_SIMPLEX,
@@ -709,6 +1002,25 @@ def main():
                     (0, 0, 255),
                     2,
                 )
+
+            if calibration_mode:
+                cv.putText(
+                    display_frame,
+                    "CALIBRATION MODE",
+                    (20, 40),
+                    cv.FONT_HERSHEY_SIMPLEX,
+                    1.0,
+                    (0, 255, 255),
+                    2,
+                )
+            elif active_homography is not None:
+                display_frame = cv.warpPerspective(
+                    display_frame,
+                    active_homography,
+                    (FRAME_SIZE, FRAME_SIZE),
+                )
+
+            update_proxy_frame(display_frame)
 
             cmd_turn = b"x"
             cmd_drive = b"x"
@@ -722,6 +1034,9 @@ def main():
                 if blue_marker is not None and red_marker is not None:
                     bx, by, br = blue_marker
                     rx, ry, rr = red_marker
+                    if active_homography is not None:
+                        bx, by = transform_point(active_homography, bx, by)
+                        rx, ry = transform_point(active_homography, rx, ry)
                     now = time.time()
 
                     dist = math.hypot(rx - bx, ry - by)
@@ -777,8 +1092,8 @@ def main():
                 ser.write(cmd_drive)
                 print(f"Commands sent: cmd_turn={cmd_turn}, cmd_drive={cmd_drive}")
 
-            if frame is not None:
-                cv.imshow("Tank Bot Automation", frame)
+            if display_frame is not None:
+                cv.imshow("Tank Bot Automation", display_frame)
 
             if cv.waitKey(1) & 0xFF == ord("q"):
                 break

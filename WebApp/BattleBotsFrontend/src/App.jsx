@@ -36,6 +36,9 @@ const App = () => {
     gameSettings,
     updateGameSettings,
     activatePowerManually,
+    calibration,
+    sendCalibrationMessage,
+    setCalibrationMode,
   } = useBattleLogic('ws://127.0.0.1:8765');
 
   const handleCloseLaunch = useCallback(() => {
@@ -91,6 +94,10 @@ const App = () => {
         <CameraFeedModal
           gameSettings={gameSettings}
           updateGameSettings={updateGameSettings}
+          calibration={calibration}
+          telemetry={telemetry}
+          sendCalibrationMessage={sendCalibrationMessage}
+          setCalibrationMode={setCalibrationMode}
           onClose={() => setIsCameraFeedOpen(false)}
         />
       )}
