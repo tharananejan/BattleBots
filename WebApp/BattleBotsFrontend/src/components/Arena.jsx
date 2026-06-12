@@ -1,19 +1,30 @@
 import React from 'react';
 import BotMarker from './BotMarker';
+import {
+  LASER_BEAM_Y_FRACTIONS,
+  LASER_BEAM_HEIGHT,
+  isPointInLaserBand,
+} from '../constants/laserGrid';
 import '../css/Arena.css';
 
-const Arena = ({ bots }) => {
-  const FRAME_SIZE = 480;
+const Arena = ({ bots, tankInLaserGrid = false }) => {
+  const FRAME_SIZE = 720;
 
   // Retrieve active ultimate ability status flags dynamically from bots state
   const rangeBot = bots?.find((b) => b.color === 'red');
   const tankBot = bots?.find((b) => b.color === 'blue');
 
   const fanPower = rangeBot?.powers?.find((p) => p.id === 'fan');
+  const laserPower = rangeBot?.powers?.find((p) => p.id === 'laser');
   const humidifierPower = tankBot?.powers?.find((p) => p.id === 'humidifier');
 
   const isFanActive = fanPower?.status === 'running';
+  const isLaserActive = laserPower?.status === 'running';
   const isHumidifierActive = humidifierPower?.status === 'running';
+  const tankInGrid =
+    isLaserActive &&
+    tankBot &&
+    isPointInLaserBand(tankBot.x, tankBot.y, FRAME_SIZE);
 
   return (
     <div className="arena-wrapper">
@@ -35,6 +46,23 @@ const Arena = ({ bots }) => {
         <div className={`humidifier bottom-left-h2 ${isHumidifierActive ? 'working' : ''}`}></div>
         <div className={`humidifier bottom-right-h1 ${isHumidifierActive ? 'working' : ''}`}></div>
         <div className={`humidifier bottom-right-h2 ${isHumidifierActive ? 'working' : ''}`}></div>
+
+        {/* Three horizontal laser beams when Range Bot laser power is active */}
+        {isLaserActive && (
+          <div
+            className={`laser-beams-container ${tankInGrid || tankInLaserGrid ? 'in-grid' : ''}`}
+          >
+            {LASER_BEAM_Y_FRACTIONS.map((frac, index) => (
+              <div
+                key={index}
+                className="laser-beam"
+                style={{
+                  top: `calc(${frac * 100}% - ${LASER_BEAM_HEIGHT / 2}px)`,
+                }}
+              />
+            ))}
+          </div>
+        )}
 
         <div className="battle-field">
           {bots.map((bot) => (

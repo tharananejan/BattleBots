@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import '../css/LaunchScreen.css';
 
-const LaunchScreen = ({ onClose, onLaunch }) => {
+const LaunchScreen = ({ onClose, onLaunch, initialMode }) => {
   const [tankName, setTankName] = useState('');
   const [rangeName, setRangeName] = useState('');
-  const [tankMode, setTankMode] = useState('Auto');
+  const [tankMode, setTankMode] = useState(initialMode ?? 'Auto');
   const [countdown, setCountdown] = useState(null);
+
+  useEffect(() => {
+    if (initialMode !== undefined) {
+      setTankMode(initialMode);
+    }
+  }, [initialMode]);
 
   useEffect(() => {
     if (countdown === null) return;

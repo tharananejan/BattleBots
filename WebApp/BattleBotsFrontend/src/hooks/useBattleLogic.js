@@ -1,14 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  HALL_FREEZE_THRESHOLD,
-  TANK_FREEZE_DURATION_MS,
   initRangePowers,
   initTankPowers,
+  applyPowerTimings,
 } from '../constants/botPowers';
+import { DEFAULT_DEBUG_DAMAGE } from '../constants/damageRules';
+import { isPointInLaserBand } from '../constants/laserGrid';
+import {
+  DEFAULT_GAME_SETTINGS,
+  mergeGameSettings,
+  patchGameSettings,
+} from '../constants/gameSettings';
 
 const INITIAL_POSITIONS = {
-  red: { x: 120, y: 240 },
-  blue: { x: 360, y: 240 },
+  red: { x: 180, y: 360 },
+  blue: { x: 540, y: 360 },
 };
 
 const initialTelemetry = {
@@ -21,7 +27,22 @@ const initialTelemetry = {
   blue_y: INITIAL_POSITIONS.blue.y,
   red_x: INITIAL_POSITIONS.red.x,
   red_y: INITIAL_POSITIONS.red.y,
+  calib_x: null,
+  calib_y: null,
   connected: false,
+};
+
+const INITIAL_CALIBRATION = {
+  calibrationMode: false,
+  corners: {
+    top_left: false,
+    top_right: false,
+    bottom_right: false,
+    bottom_left: false,
+  },
+  homographyReady: false,
+  lastError: null,
+  lastMessage: null,
 };
 
 const TICK_MS = 100;
@@ -120,14 +141,29 @@ export const useBattleLogic = (url) => {
   const [tankMode, setTankMode] = useState('Manual');
   const [tankFrozenUntil, setTankFrozenUntil] = useState(0);
   const [gameState, setGameState] = useState('ACTIVE');
+  const [battleStarted, setBattleStarted] = useState(false);
+  const [testMode, setTestMode] = useState(false);
   const [winner, setWinner] = useState(null);
+  const [debugDamage, setDebugDamage] = useState(DEFAULT_DEBUG_DAMAGE);
+  const [gameSettings, setGameSettings] = useState(DEFAULT_GAME_SETTINGS);
+  const [calibration, setCalibration] = useState(INITIAL_CALIBRATION);
+  const [tankInLaserGrid, setTankInLaserGrid] = useState(false);
 
   const isLockedRef = useRef(false);
   const hallFreezeTriggeredRef = useRef(false);
-  const FRAME_SIZE = 480;
+  const battleStartedRef = useRef(false);
+  const testModeRef = useRef(false);
+  const gameSettingsRef = useRef(DEFAULT_GAME_SETTINGS);
+  const FRAME_SIZE = 720;
 
-  const applyTankFreeze = useCallback((durationMs = TANK_FREEZE_DURATION_MS) => {
-    setTankFrozenUntil(Date.now() + durationMs);
+  const socketRef = useRef(null);
+
+  const isCombatActive = () => battleStartedRef.current || testModeRef.current;
+
+  const applyTankFreeze = useCallback((durationMs) => {
+    const freezeMs =
+      durationMs ?? gameSettingsRef.current.damage.tankFreezeDurationMs;
+    setTankFrozenUntil(Date.now() + freezeMs);
   }, []);
 
   const resetGame = useCallback(() => {
@@ -140,10 +176,12 @@ export const useBattleLogic = (url) => {
     }));
     setRangeBotHealth(100);
     setTankBotHealth(100);
-    setRangePowers(initRangePowers());
-    setTankPowers(initTankPowers());
+    setRangePowers(initRangePowers(gameSettingsRef.current));
+    setTankPowers(initTankPowers(gameSettingsRef.current));
     setTankMode('Manual');
     setTankFrozenUntil(0);
+    setTankInLaserGrid(false);
+    setBattleStarted(false);
     setGameState('ACTIVE');
     setWinner(null);
     setTimeout(() => {
@@ -158,6 +196,23 @@ export const useBattleLogic = (url) => {
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
+
+  useEffect(() => {
+    battleStartedRef.current = battleStarted;
+  }, [battleStarted]);
+
+  useEffect(() => {
+    testModeRef.current = testMode;
+  }, [testMode]);
+
+  useEffect(() => {
+    gameSettingsRef.current = gameSettings;
+  }, [gameSettings]);
+
+  useEffect(() => {
+    setRangePowers((prev) => applyPowerTimings(prev, gameSettings));
+    setTankPowers((prev) => applyPowerTimings(prev, gameSettings));
+  }, [gameSettings]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -181,15 +236,73 @@ export const useBattleLogic = (url) => {
     if (gameState === 'GAMEOVER') return;
 
     const socket = new WebSocket(url);
+    socketRef.current = socket;
+
     socket.onmessage = (event) => {
       if (isLockedRef.current) return;
 
       try {
         const data = JSON.parse(event.data);
 
+        if (data.type === 'GAME_SETTINGS' && data.settings) {
+          setGameSettings(mergeGameSettings(data.settings));
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_STATUS') {
+          setCalibration((prev) => ({
+            ...prev,
+            calibrationMode: Boolean(data.calibration_mode),
+            corners: data.corners || prev.corners,
+            homographyReady: Boolean(data.homography_ready),
+            lastError: null,
+          }));
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_POINT_CAPTURED') {
+          setCalibration((prev) => ({
+            ...prev,
+            corners: {
+              ...prev.corners,
+              [data.corner]: true,
+            },
+            lastMessage: `Captured ${String(data.corner).replace(/_/g, ' ')}`,
+            lastError: null,
+          }));
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_FINISHED') {
+          setCalibration((prev) => ({
+            ...prev,
+            calibrationMode: false,
+            homographyReady: true,
+            lastMessage: 'Calibration complete — bird\'s-eye view active',
+            lastError: null,
+          }));
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_RESET') {
+          setCalibration({
+            ...INITIAL_CALIBRATION,
+            lastMessage: 'Calibration reset',
+          });
+          return;
+        }
+
+        if (data.type === 'CALIBRATION_ERROR') {
+          setCalibration((prev) => ({
+            ...prev,
+            lastError: data.message || 'Calibration error',
+          }));
+          return;
+        }
+
         if (data.power_activated) {
           const powerId = data.power_activated;
-          if (gameStateRef.current === 'ACTIVE') {
+          if (gameStateRef.current === 'ACTIVE' && isCombatActive()) {
             if (RANGE_POWER_IDS.has(powerId)) {
               activateRangePowerRef.current?.(powerId);
             } else if (TANK_POWER_IDS.has(powerId)) {
@@ -199,22 +312,32 @@ export const useBattleLogic = (url) => {
           return;
         }
 
-        const { power_activated: _ignored, ...telemetryUpdate } = data;
+        const { power_activated: _ignored, type: _type, settings: _settings, ...telemetryUpdate } = data;
         setTelemetry((prev) => ({ ...prev, ...telemetryUpdate }));
+
+        if (data.debugDamage !== undefined) {
+          setDebugDamage((prev) => ({ ...prev, ...data.debugDamage }));
+        }
 
         if (data.isAutomatedMode !== undefined) {
           setTankMode(data.isAutomatedMode ? 'Auto' : 'Manual');
         }
 
-        if (data.hall !== undefined) {
+        if (data.testMode !== undefined) {
+          setTestMode(Boolean(data.testMode));
+        }
+
+        if (data.gameActive !== undefined) {
+          setBattleStarted(Boolean(data.gameActive));
+        }
+
+        if (data.hall !== undefined && isCombatActive()) {
           const hallValue = Number(data.hall);
-          if (
-            hallValue < HALL_FREEZE_THRESHOLD &&
-            !hallFreezeTriggeredRef.current
-          ) {
+          const hallThreshold = gameSettingsRef.current.damage.hallFreezeThreshold;
+          if (hallValue < hallThreshold && !hallFreezeTriggeredRef.current) {
             hallFreezeTriggeredRef.current = true;
-            applyTankFreeze(TANK_FREEZE_DURATION_MS);
-          } else if (hallValue >= HALL_FREEZE_THRESHOLD) {
+            applyTankFreeze();
+          } else if (hallValue >= hallThreshold) {
             hallFreezeTriggeredRef.current = false;
           }
         }
@@ -224,6 +347,7 @@ export const useBattleLogic = (url) => {
           setRangeBotHealth(rangeHp);
           if (
             gameStateRef.current === 'ACTIVE' &&
+            isCombatActive() &&
             rangeHp <= 0
           ) {
             setGameState('GAMEOVER');
@@ -236,6 +360,7 @@ export const useBattleLogic = (url) => {
           setTankBotHealth(tankHp);
           if (
             gameStateRef.current === 'ACTIVE' &&
+            isCombatActive() &&
             tankHp <= 0
           ) {
             setGameState('GAMEOVER');
@@ -249,10 +374,126 @@ export const useBattleLogic = (url) => {
 
     socket.onopen = () =>
       setTelemetry((prev) => ({ ...prev, connected: true }));
-    socket.onclose = () =>
+    socket.onclose = () => {
       setTelemetry((prev) => ({ ...prev, connected: false }));
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
+    };
     return () => socket.close();
   }, [url, gameState, applyTankFreeze]);
+
+  const startBattle = useCallback(() => {
+    setBattleStarted(true);
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'START_BATTLE' }));
+    }
+  }, []);
+
+  const toggleTestMode = useCallback((enabled) => {
+    setTestMode(enabled);
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({ type: 'SET_TEST_MODE', enabled })
+      );
+    }
+  }, []);
+
+  const setTankAutomatedMode = useCallback((isAuto) => {
+    setTankMode(isAuto ? 'Auto' : 'Manual');
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({ type: 'SET_MODE', isAutomatedMode: isAuto })
+      );
+    }
+  }, []);
+
+  const sendDebugDamage = useCallback((flags) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'DEBUG_DAMAGE', ...flags }));
+    }
+  }, []);
+
+  const sendLaserGridHit = useCallback(() => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'LASER_GRID_HIT' }));
+    }
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (gameStateRef.current !== 'ACTIVE' || !isCombatActive()) {
+        setTankInLaserGrid(false);
+        return;
+      }
+
+      const laserRunning = rangePowers.some(
+        (p) => p.id === 'laser' && p.status === 'running'
+      );
+      const inBand =
+        laserRunning &&
+        isPointInLaserBand(telemetry.blue_x, telemetry.blue_y, FRAME_SIZE);
+
+      setTankInLaserGrid(inBand);
+
+      if (inBand && debugDamage.tankLaserGrid !== false) {
+        sendLaserGridHit();
+      }
+    }, TICK_MS);
+    return () => clearInterval(interval);
+  }, [telemetry.blue_x, telemetry.blue_y, rangePowers, debugDamage, sendLaserGridHit]);
+
+  const setDebugDamagePath = useCallback(
+    (pathId, enabled) => {
+      setDebugDamage((prev) => {
+        const next = { ...prev, [pathId]: enabled };
+        sendDebugDamage(next);
+        return next;
+      });
+    },
+    [sendDebugDamage]
+  );
+
+  const updateGameSettings = useCallback((partialSettings) => {
+    setGameSettings((prev) => {
+      const next = patchGameSettings(prev, partialSettings);
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(
+          JSON.stringify({ type: 'UPDATE_SETTINGS', settings: next })
+        );
+      }
+      return next;
+    });
+  }, []);
+
+  const activatePowerManually = useCallback((powerId) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({ type: 'ACTIVATE_POWER', power: powerId })
+      );
+    }
+  }, []);
+
+  const sendCalibrationMessage = useCallback((payload) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(payload));
+    }
+  }, []);
+
+  const setCalibrationMode = useCallback(
+    (enabled) => {
+      setCalibration((prev) => ({
+        ...prev,
+        calibrationMode: enabled,
+        lastError: null,
+        lastMessage: enabled
+          ? 'Calibration mode enabled — place the range bot at each corner'
+          : null,
+      }));
+      sendCalibrationMessage({ type: 'SET_CALIBRATION_MODE', enabled });
+    },
+    [sendCalibrationMessage]
+  );
 
   useEffect(() => {
     if (gameState === 'GAMEOVER') {
@@ -263,7 +504,7 @@ export const useBattleLogic = (url) => {
 
   const activateRangePower = useCallback(
     (powerId) => {
-      if (gameState !== 'ACTIVE') return;
+      if (gameState !== 'ACTIVE' || (!battleStartedRef.current && !testModeRef.current)) return;
 
       setRangePowers((prev) => {
         const power = prev.find((p) => p.id === powerId);
@@ -282,7 +523,7 @@ export const useBattleLogic = (url) => {
 
   const activateTankPower = useCallback(
     (powerId) => {
-      if (gameState !== 'ACTIVE') return;
+      if (gameState !== 'ACTIVE' || (!battleStartedRef.current && !testModeRef.current)) return;
 
       setTankPowers((prev) => {
         const power = prev.find((p) => p.id === powerId);
@@ -348,5 +589,19 @@ export const useBattleLogic = (url) => {
     gameState,
     winner,
     isTankFrozen,
+    startBattle,
+    setTankAutomatedMode,
+    debugDamage,
+    setDebugDamagePath,
+    battleStarted,
+    testMode,
+    toggleTestMode,
+    gameSettings,
+    updateGameSettings,
+    activatePowerManually,
+    calibration,
+    sendCalibrationMessage,
+    setCalibrationMode,
+    tankInLaserGrid,
   };
 };

@@ -35,10 +35,6 @@ const int joySW1 = 11;
 const int btn1 = 6;
 const int btn2 = 5; //Humididfier
 
-// --- RATE LIMITING / DEBOUNCE VARIABLES FOR btn1 ---
-const unsigned long BUTTON_COOLDOWN = 10000;
-unsigned long lastPressTime = -BUTTON_COOLDOWN;
-
 // --- Manual / Automated mode (btn2 hold 5s) ---
 const unsigned long MODE_HOLD_MS = 5000;
 const unsigned long MANUAL_LABEL_MS = 500;
@@ -66,7 +62,13 @@ const int damage = LED_BUILTIN;
 typedef struct {
   uint8_t rangeHealth;
   uint8_t tankHealth;
+  uint32_t fanCooldownMs;
+  uint32_t laserCooldownMs;
 } GlobalStateData;
+
+typedef struct {
+  bool isAutomatedMode;
+} ModeControlData;
 
 typedef struct {
   int x1;
@@ -132,6 +134,18 @@ void OnDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
     }
     currentHealth = state.tankHealth;
     enemyHealth = state.rangeHealth;
+    return;
+  }
+
+  if (len == sizeof(ModeControlData) && memcmp(mac, battleGroundMac, 6) == 0) {
+    ModeControlData mode;
+    memcpy(&mode, incomingData, sizeof(mode));
+    isAutomatedMode = mode.isAutomatedMode;
+    if (!isAutomatedMode) {
+      manualDisplayUntil = millis() + MANUAL_LABEL_MS;
+    }
+    Serial.println(isAutomatedMode ? "Mode set from BattleGround: Automated"
+                                 : "Mode set from BattleGround: Manual");
     return;
   }
 
@@ -248,6 +262,7 @@ void loop() {
   unsigned long currentTime = millis();
   bool btn2Down = digitalRead(btn2) == LOW;
   static bool prevBtn2Down = false;
+  static bool prevBtn1Down = false;
 
   handleModeHold(currentTime, btn2Down);
 
@@ -261,19 +276,15 @@ void loop() {
   ctrlData.isAutomatedMode = isAutomatedMode;
 
   if (currentHealth > 0 && !isFrozen && !isAutomatedMode) {
-    bool isReady = (currentTime - lastPressTime >= BUTTON_COOLDOWN);
-    bool justPressed = false;
-
-    if (isReady && digitalRead(btn1) == LOW) {
-      lastPressTime = currentTime;
-      justPressed = true;
+    bool btn1Down = digitalRead(btn1) == LOW;
+    if (btn1Down && !prevBtn1Down) {
       Serial.println("Button 1 pressed");
     }
 
     ctrlData.x1 = analogRead(VRx1);
     ctrlData.y1 = analogRead(VRy1);
     ctrlData.sw1 = digitalRead(joySW1) == LOW;
-    ctrlData.btn1 = digitalRead(btn1) == LOW;
+    ctrlData.btn1 = btn1Down;
     ctrlData.btn2 = false;
 
     esp_now_send(broadcastAddress, (uint8_t *)&ctrlData, sizeof(ctrlData));
@@ -285,10 +296,6 @@ void loop() {
       humidifierPulse.btn2 = true;
       esp_now_send(battleGroundMac, (uint8_t *)&humidifierPulse, sizeof(humidifierPulse));
       Serial.println("Button 2 pressed. Signal sent to BattleGround.");
-    }
-
-    if (justPressed) {
-      ctrlData.btn1 = false;
     }
   } else if (currentHealth > 0 && !isFrozen && isAutomatedMode) {
     ctrlData.x1 = JOYSTICK_CENTER;
@@ -338,12 +345,7 @@ void loop() {
     } else if (currentTime < manualDisplayUntil) {
       display.println("Manual");
     } else {
-      bool isReady = (currentTime - lastPressTime >= BUTTON_COOLDOWN);
-      if (isReady) {
-        display.println("READY");
-      } else {
-        display.print("NR ");
-      }
+      display.println("READY");
 
       const int BAR_X = 0;
       const int BAR_Y = 20;
@@ -364,5 +366,10 @@ void loop() {
 
   display.display();
   prevBtn2Down = btn2Down;
+  if (currentHealth > 0 && !isFrozen && !isAutomatedMode) {
+    prevBtn1Down = digitalRead(btn1) == LOW;
+  } else {
+    prevBtn1Down = false;
+  }
   delay(100);
 }
