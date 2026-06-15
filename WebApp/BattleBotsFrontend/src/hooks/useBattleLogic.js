@@ -5,7 +5,7 @@ import {
   applyPowerTimings,
 } from '../constants/botPowers';
 import { DEFAULT_DEBUG_DAMAGE } from '../constants/damageRules';
-import { isPointInLaserBand } from '../constants/laserGrid';
+import { isBotOverlappingLaserBand } from '../constants/laserGrid';
 import {
   DEFAULT_GAME_SETTINGS,
   mergeGameSettings,
@@ -154,6 +154,9 @@ export const useBattleLogic = (url) => {
   const battleStartedRef = useRef(false);
   const testModeRef = useRef(false);
   const gameSettingsRef = useRef(DEFAULT_GAME_SETTINGS);
+  const telemetryRef = useRef(telemetry);
+  const rangePowersRef = useRef(rangePowers);
+  const debugDamageRef = useRef(debugDamage);
   const FRAME_SIZE = 720;
 
   const socketRef = useRef(null);
@@ -208,6 +211,18 @@ export const useBattleLogic = (url) => {
   useEffect(() => {
     gameSettingsRef.current = gameSettings;
   }, [gameSettings]);
+
+  useEffect(() => {
+    telemetryRef.current = telemetry;
+  }, [telemetry]);
+
+  useEffect(() => {
+    rangePowersRef.current = rangePowers;
+  }, [rangePowers]);
+
+  useEffect(() => {
+    debugDamageRef.current = debugDamage;
+  }, [debugDamage]);
 
   useEffect(() => {
     setRangePowers((prev) => applyPowerTimings(prev, gameSettings));
@@ -427,21 +442,22 @@ export const useBattleLogic = (url) => {
         return;
       }
 
-      const laserRunning = rangePowers.some(
+      const { blue_x, blue_y } = telemetryRef.current;
+      const laserRunning = rangePowersRef.current.some(
         (p) => p.id === 'laser' && p.status === 'running'
       );
       const inBand =
         laserRunning &&
-        isPointInLaserBand(telemetry.blue_x, telemetry.blue_y, FRAME_SIZE);
+        isBotOverlappingLaserBand(blue_x, blue_y, undefined, FRAME_SIZE);
 
       setTankInLaserGrid(inBand);
 
-      if (inBand && debugDamage.tankLaserGrid !== false) {
+      if (inBand && debugDamageRef.current.tankLaserGrid !== false) {
         sendLaserGridHit();
       }
     }, TICK_MS);
     return () => clearInterval(interval);
-  }, [telemetry.blue_x, telemetry.blue_y, rangePowers, debugDamage, sendLaserGridHit]);
+  }, [sendLaserGridHit]);
 
   const setDebugDamagePath = useCallback(
     (pathId, enabled) => {

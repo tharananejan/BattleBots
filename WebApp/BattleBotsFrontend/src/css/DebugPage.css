@@ -841,10 +841,18 @@
   color: var(--dbg-muted);
 }
 
-.debug-settings-actions {
+.debug-settings-actions,
+.debug-footer-actions {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+.debug-footer-actions {
+  flex-shrink: 0;
+  margin-top: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--dbg-surface-2);
 }
 
 .debug-clear-btn,

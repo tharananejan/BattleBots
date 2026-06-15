@@ -130,7 +130,6 @@ export const DAMAGE_SETTING_FIELDS = [
 export const POWER_SETTING_FIELDS = [
   { id: 'fan', label: 'Fan (Ultimate)', bot: 'Range Bot', color: 'red' },
   { id: 'laser', label: 'Laser (Ultimate)', bot: 'Range Bot', color: 'red' },
-  { id: 'dodge', label: 'Dodge', bot: 'Range Bot', color: 'red' },
   { id: 'humidifier', label: 'Humidifier (Ultimate)', bot: 'Tank Bot', color: 'blue' },
   { id: 'hammer', label: 'Hammer', bot: 'Tank Bot', color: 'blue' },
 ];

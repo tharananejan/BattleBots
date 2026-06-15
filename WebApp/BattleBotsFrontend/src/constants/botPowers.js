@@ -26,15 +26,6 @@ function buildRangePowerDefs(settings = DEFAULT_GAME_SETTINGS) {
       activeMs: powers.laser.activeMs,
       cooldownMs: powers.laser.cooldownMs,
     },
-    {
-      id: 'dodge',
-      name: 'Dodge',
-      icon: 'DDG',
-      type: 'normal',
-      isUltimate: false,
-      activeMs: powers.dodge.activeMs,
-      cooldownMs: powers.dodge.cooldownMs,
-    },
   ];
 }
 

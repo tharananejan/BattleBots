@@ -3,7 +3,7 @@ import BotMarker from './BotMarker';
 import {
   LASER_BEAM_Y_FRACTIONS,
   LASER_BEAM_HEIGHT,
-  isPointInLaserBand,
+  isBotOverlappingLaserBand,
 } from '../constants/laserGrid';
 import '../css/Arena.css';
 
@@ -24,7 +24,7 @@ const Arena = ({ bots, tankInLaserGrid = false }) => {
   const tankInGrid =
     isLaserActive &&
     tankBot &&
-    isPointInLaserBand(tankBot.x, tankBot.y, FRAME_SIZE);
+    isBotOverlappingLaserBand(tankBot.x, tankBot.y, undefined, FRAME_SIZE);
 
   return (
     <div className="arena-wrapper">

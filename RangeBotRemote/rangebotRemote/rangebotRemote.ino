@@ -7,30 +7,28 @@
 // OLED setup
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-#define OLED_RESET    -1
+#define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // Custom I2C pins
 #define I2C_SDA 37
 #define I2C_SCL 21
 
-
-
 // Joystick 1
-const int VRx1 = 17;
-const int VRy1 = 16;
+const int VRx1 = 9;
+const int VRy1 = 8;
 const int joySW1 = 11;
 
-// Joystick 2 
-const int VRx2 = 9;
-const int VRy2 = 8;
+// Joystick 2
+const int VRx2 = 17;
+const int VRy2 = 16;
 const int joySW2 = 12;
 
 // Push buttons
-const int btn1 = 4; //api wada karana button eka
+const int btn1 = 4; // api wada karana button eka
 const int btn2 = 5;
 const int btn3 = 6;
-const int btn4 = 7; 
+const int btn4 = 7;
 
 // --- RATE LIMITING / DEBOUNCE VARIABLES FOR btn4 ---
 unsigned long FAN_COOLDOWN = 10000;
@@ -53,9 +51,10 @@ const unsigned long BG_TIMEOUT_MS = 2000;
 const int damage = 48;
 // Server MAC address
 uint8_t rangeBotMac[] = {0x10, 0x20, 0xBA, 0x4C, 0xE3, 0x30};
-uint8_t centralDeviceMac[] = { 0x10, 0x20, 0xBA, 0x4C, 0x50, 0x8C };
+uint8_t centralDeviceMac[] = {0x10, 0x20, 0xBA, 0x4C, 0x50, 0x8C};
 // Sending Data structure
-typedef struct {
+typedef struct
+{
   int x1, y1;
   bool sw1;
   int x2, y2;
@@ -63,25 +62,27 @@ typedef struct {
   bool btn1, btn2, btn3, btn4;
 } ControllerData;
 
-//Receiving Data Structure
+// Receiving Data Structure
 
 ControllerData ctrlData;
 
-
-typedef struct {
+typedef struct
+{
   int fan;
   int laser;
 } PowerValues;
 PowerValues power;
 
-typedef struct {
+typedef struct
+{
   uint8_t rangeHealth;
   uint8_t tankHealth;
   uint32_t fanCooldownMs;
   uint32_t laserCooldownMs;
 } GlobalStateData;
 
-typedef struct {
+typedef struct
+{
   int d1;
   bool ir1;
   bool ir2;
@@ -89,7 +90,8 @@ typedef struct {
   float m1;
 } ReceivingData;
 
-void drawCenteredText(const char *text, uint8_t textSize, int16_t y) {
+void drawCenteredText(const char *text, uint8_t textSize, int16_t y)
+{
   display.setTextSize(textSize);
   int16_t x1, y1;
   uint16_t w, h;
@@ -98,7 +100,8 @@ void drawCenteredText(const char *text, uint8_t textSize, int16_t y) {
   display.println(text);
 }
 
-void showLoadingScreen() {
+void showLoadingScreen()
+{
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   drawCenteredText("Mahasona", 2, 8);
@@ -111,33 +114,40 @@ void showLoadingScreen() {
 
 void onDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {}
 
-void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData, int len) {
+void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData, int len)
+{
   if (len == sizeof(GlobalStateData) &&
-      memcmp(recv_info->src_addr, centralDeviceMac, 6) == 0) {
+      memcmp(recv_info->src_addr, centralDeviceMac, 6) == 0)
+  {
     GlobalStateData state;
     memcpy(&state, incomingData, sizeof(state));
     lastBattleGroundMsgTime = millis();
-    if (state.rangeHealth < currentHealth) {
+    if (state.rangeHealth < currentHealth)
+    {
       digitalWrite(damage, HIGH);
       damageLedOn = true;
       damageLedOffAt = millis() + 50;
     }
     currentHealth = state.rangeHealth;
     enemyHealth = state.tankHealth;
-    if (state.fanCooldownMs > 0) {
+    if (state.fanCooldownMs > 0)
+    {
       FAN_COOLDOWN = state.fanCooldownMs;
     }
-    if (state.laserCooldownMs > 0) {
+    if (state.laserCooldownMs > 0)
+    {
       LASER_COOLDOWN = state.laserCooldownMs;
     }
     return;
   }
 
-  if (len == sizeof(ReceivingData)) {
+  if (len == sizeof(ReceivingData))
+  {
     ReceivingData receivedData;
     memcpy(&receivedData, incomingData, sizeof(receivedData));
     int hit = (receivedData.d1 > 400 || receivedData.ir1 || receivedData.ir2 || receivedData.humidityHit) ? 1 : 0;
-    if (hit) {
+    if (hit)
+    {
       digitalWrite(damage, HIGH);
       damageLedOn = true;
       damageLedOffAt = millis() + 50;
@@ -147,10 +157,10 @@ void onDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
 
   Serial.println("Received unexpected data size.");
 }
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   WiFi.mode(WIFI_STA);
-  
 
   // Pin setup
   pinMode(VRx1, INPUT);
@@ -170,16 +180,19 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
 
   // OLED init
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+  {
     Serial.println("OLED failed");
-    while (true);
+    while (true)
+      ;
   }
   display.setRotation(2);
   display.setTextColor(SSD1306_WHITE);
   showLoadingScreen();
 
   // ESP-NOW init
-  if (esp_now_init() != ESP_OK) {
+  if (esp_now_init() != ESP_OK)
+  {
     Serial.println("ESP-NOW init failed");
     return;
   }
@@ -191,7 +204,8 @@ void setup() {
   memcpy(peerInfo.peer_addr, rangeBotMac, 6);
   peerInfo.channel = 0;
   peerInfo.encrypt = false;
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+  if (esp_now_add_peer(&peerInfo) != ESP_OK)
+  {
     Serial.println("RangeBot peer add failed");
     return;
   }
@@ -199,7 +213,8 @@ void setup() {
   memcpy(peerInfo.peer_addr, centralDeviceMac, 6);
   peerInfo.channel = 0;
   peerInfo.encrypt = false;
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+  if (esp_now_add_peer(&peerInfo) != ESP_OK)
+  {
     Serial.println("BattleGround peer add failed");
     return;
   }
@@ -207,43 +222,51 @@ void setup() {
   Serial.println("Setup complete");
 }
 
-void loop() {
-  if (damageLedOn && (long)(millis() - damageLedOffAt) >= 0) {
+void loop()
+{
+  if (damageLedOn && (long)(millis() - damageLedOffAt) >= 0)
+  {
     digitalWrite(damage, LOW);
     damageLedOn = false;
   }
 
   unsigned long currentTime = millis();
- 
+
   bool fanReady =
-    (lastFanPress == 0) || (currentTime - lastFanPress >= FAN_COOLDOWN);
+      (lastFanPress == 0) || (currentTime - lastFanPress >= FAN_COOLDOWN);
   bool laserReady =
-    (lastLaserPress == 0) || (currentTime - lastLaserPress >= LASER_COOLDOWN);
+      (lastLaserPress == 0) || (currentTime - lastLaserPress >= LASER_COOLDOWN);
 
   // Local variables to decide what to send to Central Device
   int currentFanSignal = 0;
   int currentLaserSignal = 0;
 
   // --- FAN LOGIC (BTN4) ---
-  if (fanReady && digitalRead(btn4) == LOW) {
+  if (fanReady && digitalRead(btn4) == LOW)
+  {
     lastFanPress = currentTime;
     ctrlData.btn4 = true;
     currentFanSignal = 1;
     forceSendBG = true;
     Serial.println("Button 4 pressed");
-  } else {
+  }
+  else
+  {
     ctrlData.btn4 = false;
     currentFanSignal = 0;
   }
 
   // --- LASER LOGIC (BTN3) ---
-  if (laserReady && digitalRead(btn3) == LOW) {
+  if (laserReady && digitalRead(btn3) == LOW)
+  {
     lastLaserPress = currentTime;
     ctrlData.btn3 = true;
     currentLaserSignal = 1;
     forceSendBG = true;
     Serial.println("Button 3 pressed");
-  } else {
+  }
+  else
+  {
     ctrlData.btn3 = false;
     currentLaserSignal = 0;
   }
@@ -264,13 +287,18 @@ void loop() {
   power.fan = currentFanSignal;
   power.laser = currentLaserSignal;
 
-  if (currentHealth > 0 && (forceSendBG || (millis() - timer) > 100)) {
+  if (currentHealth > 0 && (forceSendBG || (millis() - timer) > 100))
+  {
     // 1. To Central Device (Battleground)
     esp_now_send(centralDeviceMac, (uint8_t *)&power, sizeof(power));
-    if (forceSendBG) {
-      if (currentFanSignal == 1) {
+    if (forceSendBG)
+    {
+      if (currentFanSignal == 1)
+      {
         Serial.println("Signal sent to BattleGround");
-      } else if (currentLaserSignal == 1) {
+      }
+      else if (currentLaserSignal == 1)
+      {
         Serial.println("Signal sent to BattleGround");
       }
       forceSendBG = false;
@@ -278,14 +306,15 @@ void loop() {
     timer = millis();
   }
 
-  if (currentHealth > 0 && (millis() - timer2) > 30) {
+  if (currentHealth > 0 && (millis() - timer2) > 30)
+  {
     esp_now_send(rangeBotMac, (uint8_t *)&ctrlData, sizeof(ctrlData));
     timer2 = millis();
   }
 
-
   // --- OLED ---
-  if (millis() - oledTimer >= 100) {
+  if (millis() - oledTimer >= 100)
+  {
     oledTimer = millis();
     display.setRotation(0);
     display.clearDisplay();
@@ -294,14 +323,21 @@ void loop() {
     bool battleGroundConnected = (lastBattleGroundMsgTime > 0) &&
                                  (millis() - lastBattleGroundMsgTime <= BG_TIMEOUT_MS);
 
-    if (!battleGroundConnected) {
+    if (!battleGroundConnected)
+    {
       drawCenteredText("BattleGround", 1, 16);
       drawCenteredText("Not Connected", 1, 32);
-    } else if (currentHealth == 0) {
+    }
+    else if (currentHealth == 0)
+    {
       drawCenteredText("Game Over", 2, 20);
-    } else if (enemyHealth == 0) {
+    }
+    else if (enemyHealth == 0)
+    {
       drawCenteredText("Victory", 2, 20);
-    } else {
+    }
+    else
+    {
       display.setTextSize(1);
       display.setCursor(0, 0);
       display.print("FAN: ");
@@ -311,7 +347,8 @@ void loop() {
 
       int fillWidth = map(currentHealth, 0, 100, 0, 118);
       display.drawRect(0, 45, 118, 8, SSD1306_WHITE);
-      if (fillWidth > 0) display.fillRect(1, 46, fillWidth - 2, 6, SSD1306_WHITE);
+      if (fillWidth > 0)
+        display.fillRect(1, 46, fillWidth - 2, 6, SSD1306_WHITE);
     }
 
     display.display();

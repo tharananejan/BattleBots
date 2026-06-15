@@ -551,24 +551,6 @@ const DebugPage = ({
                     return power ? renderPowerRow(power, 'cyan') : null;
                   })}
                 </div>
-                <div className="debug-settings-actions">
-                  <button
-                    type="button"
-                    className="debug-clear-btn"
-                    onClick={resetDraft}
-                    disabled={!settingsDirty}
-                  >
-                    Reset
-                  </button>
-                  <button
-                    type="button"
-                    className="debug-apply-btn"
-                    onClick={applySettings}
-                    disabled={!settingsDirty}
-                  >
-                    Apply
-                  </button>
-                </div>
               </section>
 
               <section className="debug-card debug-card--log">
@@ -603,6 +585,25 @@ const DebugPage = ({
             </div>
           )}
         </div>
+
+        <footer className="debug-footer-actions">
+          <button
+            type="button"
+            className="debug-clear-btn"
+            onClick={resetDraft}
+            disabled={!settingsDirty}
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            className="debug-apply-btn"
+            onClick={applySettings}
+            disabled={!settingsDirty}
+          >
+            Apply
+          </button>
+        </footer>
       </div>
     </div>
   );

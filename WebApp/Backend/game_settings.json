@@ -3,7 +3,7 @@
     "rangePiezoIr": 5,
     "rangeHumidity": 5,
     "tankLaser": 10,
-    "tankLaserGrid": 3,
+    "tankLaserGrid": 2,
     "tankIr": 2,
     "piezoHitThreshold": 200,
     "damageDebounceMs": 400,
@@ -16,7 +16,7 @@
       "cooldownMs": 10000
     },
     "laser": {
-      "activeMs": 20000,
+      "activeMs": 15000,
       "cooldownMs": 10000
     },
     "humidifier": {
@@ -33,6 +33,6 @@
     }
   },
   "camera": {
-    "url": "http://10.224.180.89:8080/video"
+    "url": "http://10.27.245.116:8080/video"
   }
 }
