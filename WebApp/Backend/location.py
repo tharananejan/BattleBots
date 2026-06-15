@@ -4,9 +4,13 @@ import json
 import math
 import os
 import queue
+import shutil
+import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import webbrowser
+from functools import partial
+from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 import cv2 as cv
@@ -15,8 +19,11 @@ import serial
 import websockets
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-GAME_SETTINGS_PATH = os.path.join(SCRIPT_DIR, "game_settings.json")
-CALIBRATION_PATH = os.path.join(SCRIPT_DIR, "calibration.json")
+BUNDLE_DIR = getattr(sys, "_MEIPASS", SCRIPT_DIR)
+FRONTEND_DIST = os.path.join(BUNDLE_DIR, "frontend_dist")
+DATA_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else SCRIPT_DIR
+GAME_SETTINGS_PATH = os.path.join(DATA_DIR, "game_settings.json")
+CALIBRATION_PATH = os.path.join(DATA_DIR, "calibration.json")
 
 CORNER_KEYS = ("top_left", "top_right", "bottom_right", "bottom_left")
 MIN_CORNER_AREA = 1000
@@ -61,6 +68,7 @@ APPROACH_DRIVE = b"s"
 WS_HOST = "127.0.0.1"
 WS_PORT = 8765
 CAMERA_PROXY_PORT = 8766
+STATIC_PORT = 8080
 OPEN_TIMEOUT_MS = 5000
 READ_TIMEOUT_MS = 5000
 CAMERA_OPEN_TIMEOUT_S = 6.0
@@ -274,6 +282,25 @@ def save_game_settings(settings: dict) -> None:
             settings_file.write("\n")
     except Exception as error:
         print(f"Failed to save game settings: {error}")
+
+
+def ensure_data_files() -> None:
+    """Ensure writable config files exist next to the executable when frozen."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    seed_settings = os.path.join(BUNDLE_DIR, "game_settings.json")
+    seed_calibration = os.path.join(BUNDLE_DIR, "calibration.json")
+
+    if not os.path.exists(GAME_SETTINGS_PATH):
+        if os.path.exists(seed_settings):
+            shutil.copy2(seed_settings, GAME_SETTINGS_PATH)
+        else:
+            save_game_settings(copy.deepcopy(DEFAULT_GAME_SETTINGS))
+
+    if not os.path.exists(CALIBRATION_PATH):
+        if os.path.exists(seed_calibration):
+            shutil.copy2(seed_calibration, CALIBRATION_PATH)
+        else:
+            save_calibration(copy.deepcopy(DEFAULT_CALIBRATION))
 
 
 def to_firmware_settings(settings: dict) -> dict:
@@ -531,6 +558,40 @@ def start_camera_proxy_server() -> None:
         print(
             f"Camera proxy listening on http://{WS_HOST}:{CAMERA_PROXY_PORT}/video"
         )
+        server.serve_forever()
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    time.sleep(0.1)
+
+
+class StaticUIHandler(SimpleHTTPRequestHandler):
+    """Serve the built React UI with SPA index.html fallback."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=FRONTEND_DIST, **kwargs)
+
+    def do_GET(self):
+        requested_path = self.path.split("?", 1)[0]
+        file_path = os.path.join(FRONTEND_DIST, requested_path.lstrip("/"))
+        if requested_path != "/" and os.path.isfile(file_path):
+            return super().do_GET()
+        self.path = "/index.html"
+        return super().do_GET()
+
+    def log_message(self, format, *args):
+        pass
+
+
+def start_static_ui_server() -> None:
+    if not os.path.isdir(FRONTEND_DIST):
+        print(f"Frontend bundle not found at {FRONTEND_DIST}; UI server skipped")
+        return
+
+    def run():
+        handler = partial(StaticUIHandler)
+        server = ThreadingHTTPServer((WS_HOST, STATIC_PORT), handler)
+        print(f"UI server listening on http://{WS_HOST}:{STATIC_PORT}")
         server.serve_forever()
 
     thread = threading.Thread(target=run, daemon=True)
@@ -873,6 +934,7 @@ def apply_game_settings_update(msg: dict, ser) -> None:
 
 
 def main():
+    ensure_data_files()
     load_game_settings()
     if "camera" in game_settings:
         game_settings["camera"]["url"] = normalize_camera_url(
@@ -880,6 +942,9 @@ def main():
         )
     start_websocket_server()
     start_camera_proxy_server()
+    start_static_ui_server()
+    if os.path.isdir(FRONTEND_DIST):
+        webbrowser.open(f"http://{WS_HOST}:{STATIC_PORT}")
     ser = open_serial()
     send_serial_json(ser, to_firmware_settings(game_settings))
 
